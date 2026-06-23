@@ -1,0 +1,502 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		F134045229FD831D7533792C /* KetoCastApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DDE0FC77A8256C025EF71AD /* KetoCastApp.swift */; };
+		C44653C34CFC2296F25F2095 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1460A813C3A9E85D5C288673 /* AppState.swift */; };
+		D96F19389895050426CCB45B /* FoodItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B47522B30574220E69588B73 /* FoodItem.swift */; };
+		EA2706D87E47D05AAB2A4071 /* FoodLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33EC0C44D7EEA71E3B0D793D /* FoodLog.swift */; };
+		8DA5B0684B122664C1F45B42 /* UserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A83051D64B6CEDA8AB335660 /* UserProfile.swift */; };
+		C252C50392E8A6940FDC767B /* WeightEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F1890AEFA2575B3D8B54F7 /* WeightEntry.swift */; };
+		521E2A51E982F1EE50060D52 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61E413D4FB9DEF68511A4696 /* DashboardViewModel.swift */; };
+		C7A20DBF357C835FD8D62569 /* LoggingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F971C77012792593C3DCFB /* LoggingViewModel.swift */; };
+		EF9FAB38E7553260BFE14460 /* AnalyticsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3F1B6F13621988492D48F8A /* AnalyticsViewModel.swift */; };
+		1807CB97D32C6151F1FCBA65 /* ProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F258F2352C6EA369F5415226 /* ProfileViewModel.swift */; };
+		1405EBD112A1AB97D48C3F63 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E80CECC1B0B61959E8BEDDE /* MainTabView.swift */; };
+		ECD87171DED5D683CF17758D /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D10022B0879DA7B82598948 /* HomeView.swift */; };
+		DE0E30297A812CFEB530F326 /* LoggingSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28EF6A9B13185A6A25E1EED7 /* LoggingSheetView.swift */; };
+		1ABC8CBB1845B0DDAD4F7041 /* AnalyticsContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3285C3AC1337F5DD5CA9389 /* AnalyticsContainerView.swift */; };
+		77F80480DE44C12AA32E964B /* OnboardingContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A694FB0B3FD089CA52C0C7 /* OnboardingContainerView.swift */; };
+		F233305AC383297FC22C083B /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF6AEDB0F6254E711990D642 /* ProfileView.swift */; };
+		928E7C19D1430EB8FAEB727B /* FoodDatabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EAE7994E88184D647536A75 /* FoodDatabaseService.swift */; };
+		1B82AD2C90771AAB734C69B7 /* AIVisionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 481AB9F69C02A62D790EC643 /* AIVisionService.swift */; };
+		EF14B83BE663B18657ED1B1E /* VoiceLoggingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A5C98196C378B37EB8F0627 /* VoiceLoggingService.swift */; };
+		08FB067BE88CD7D9C370E3AE /* HealthKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8515989C57E4117F068B3296 /* HealthKitService.swift */; };
+		3E928730A63EE0CD31C13884 /* ClaudeCoachingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECBF5AEDB48725B4B601E9D7 /* ClaudeCoachingService.swift */; };
+		4A0E0789547C18E5ECB414A6 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3058B026C8CD6EC8C54D5779 /* NotificationService.swift */; };
+		4CE7014B9B662E90921ED44E /* CoreDataStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF7CF51A04FCD3C00CC33D54 /* CoreDataStack.swift */; };
+		B78AD3E677F0B68334F70F75 /* LogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F373E873CACAA1918CB5D84 /* LogStore.swift */; };
+		50AAB0FB0677D921101883C9 /* SecretsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAADAD4CF5018A711148FE14 /* SecretsManager.swift */; };
+		F2CF48F61F38310D1FB7A3E3 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2DA250D62334EA824BA5688 /* DesignSystem.swift */; };
+		AEE22FD42FBEB64998C49F75 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4388F6827429DDBC8556752 /* Assets.xcassets */; };
+		2A32517F411AE347759FDD2C /* KetoCast.xcdatamodeld in Resources */ = {isa = PBXBuildFile; fileRef = 10B805585A93B5ACB217E809 /* KetoCast.xcdatamodeld */; };
+		F4A030A0036E84254F2004A6 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9C1EB866E7F427FCEDDC1BE7 /* SwiftUI.framework */; };
+		6FE63D83C6639A528AD6FD17 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 456122E972EF0CC7F6535CC5 /* Foundation.framework */; };
+		24CB767CD45579E555767CDE /* CoreData.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 07806F6B8A5E1766AF76E71E /* CoreData.framework */; };
+		3E730BB85A70BD92B7F6C37A /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7A4557294BDFBC5CC85FE9F2 /* HealthKit.framework */; };
+		8F62A218B0D208FFE3023798 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0649E2C7DE211B9211EBA3CF /* AVFoundation.framework */; };
+		87CC2C47694A6AF59748B4EB /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA0D16F3D05DB2728007E724 /* UserNotifications.framework */; };
+		DF283D5D2E31EF0C7B32C871 /* Charts.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7C07C59E2568B1BE58A40674 /* Charts.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		8DDE0FC77A8256C025EF71AD /* KetoCastApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KetoCastApp.swift; sourceTree = "<group>"; };
+		1460A813C3A9E85D5C288673 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		B47522B30574220E69588B73 /* FoodItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodItem.swift; sourceTree = "<group>"; };
+		33EC0C44D7EEA71E3B0D793D /* FoodLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodLog.swift; sourceTree = "<group>"; };
+		A83051D64B6CEDA8AB335660 /* UserProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfile.swift; sourceTree = "<group>"; };
+		18F1890AEFA2575B3D8B54F7 /* WeightEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeightEntry.swift; sourceTree = "<group>"; };
+		61E413D4FB9DEF68511A4696 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
+		D0F971C77012792593C3DCFB /* LoggingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoggingViewModel.swift; sourceTree = "<group>"; };
+		C3F1B6F13621988492D48F8A /* AnalyticsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsViewModel.swift; sourceTree = "<group>"; };
+		F258F2352C6EA369F5415226 /* ProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileViewModel.swift; sourceTree = "<group>"; };
+		9E80CECC1B0B61959E8BEDDE /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		0D10022B0879DA7B82598948 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		28EF6A9B13185A6A25E1EED7 /* LoggingSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoggingSheetView.swift; sourceTree = "<group>"; };
+		E3285C3AC1337F5DD5CA9389 /* AnalyticsContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsContainerView.swift; sourceTree = "<group>"; };
+		75A694FB0B3FD089CA52C0C7 /* OnboardingContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingContainerView.swift; sourceTree = "<group>"; };
+		AF6AEDB0F6254E711990D642 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		2EAE7994E88184D647536A75 /* FoodDatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodDatabaseService.swift; sourceTree = "<group>"; };
+		481AB9F69C02A62D790EC643 /* AIVisionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIVisionService.swift; sourceTree = "<group>"; };
+		3A5C98196C378B37EB8F0627 /* VoiceLoggingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLoggingService.swift; sourceTree = "<group>"; };
+		8515989C57E4117F068B3296 /* HealthKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitService.swift; sourceTree = "<group>"; };
+		ECBF5AEDB48725B4B601E9D7 /* ClaudeCoachingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCoachingService.swift; sourceTree = "<group>"; };
+		3058B026C8CD6EC8C54D5779 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		EF7CF51A04FCD3C00CC33D54 /* CoreDataStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDataStack.swift; sourceTree = "<group>"; };
+		8F373E873CACAA1918CB5D84 /* LogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogStore.swift; sourceTree = "<group>"; };
+		EAADAD4CF5018A711148FE14 /* SecretsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretsManager.swift; sourceTree = "<group>"; };
+		A2DA250D62334EA824BA5688 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		C4388F6827429DDBC8556752 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		10B805585A93B5ACB217E809 /* KetoCast.xcdatamodeld */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = KetoCast.xcdatamodeld; sourceTree = "<group>"; };
+		17DE4872A35A7F3B90D0EB8D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		395A56A3CC07FC7A9176EA55 /* KetoCast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KetoCast.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9C1EB866E7F427FCEDDC1BE7 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		456122E972EF0CC7F6535CC5 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		07806F6B8A5E1766AF76E71E /* CoreData.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreData.framework; path = System/Library/Frameworks/CoreData.framework; sourceTree = SDKROOT; };
+		7A4557294BDFBC5CC85FE9F2 /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
+		0649E2C7DE211B9211EBA3CF /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		FA0D16F3D05DB2728007E724 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
+		7C07C59E2568B1BE58A40674 /* Charts.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Charts.framework; path = System/Library/Frameworks/Charts.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AF6EC2045C50CC681F76C832 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F4A030A0036E84254F2004A6 /* SwiftUI.framework in Frameworks */,
+				6FE63D83C6639A528AD6FD17 /* Foundation.framework in Frameworks */,
+				24CB767CD45579E555767CDE /* CoreData.framework in Frameworks */,
+				3E730BB85A70BD92B7F6C37A /* HealthKit.framework in Frameworks */,
+				8F62A218B0D208FFE3023798 /* AVFoundation.framework in Frameworks */,
+				87CC2C47694A6AF59748B4EB /* UserNotifications.framework in Frameworks */,
+				DF283D5D2E31EF0C7B32C871 /* Charts.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8DF547AD75BFFD09655F8266 /* KetoCast */ = {
+			isa = PBXGroup;
+			children = (
+				7FBBC7CFE648A8AE0632B405 /* KetoCast */,
+				192043EC6F0337C818215876 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		192043EC6F0337C818215876 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				395A56A3CC07FC7A9176EA55 /* KetoCast.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		7FBBC7CFE648A8AE0632B405 /* KetoCast */ = {
+			isa = PBXGroup;
+			children = (
+				6E75A9BE1A1B2E4D838295A5 /* App */,
+				0DAC5569626B8F68E297F3C1 /* Models */,
+				9980606761BC4E0A35AC8AA1 /* ViewModels */,
+				3CB8947DDD0AFEC04C567A1B /* Views */,
+				6C56F2965D9FADE3E908A753 /* Services */,
+				3E6CDFE16F8E6B0B990BDE43 /* Persistence */,
+				BB1156001676BBF12B3329CB /* Utilities */,
+				97E269A332B71626AA285AF7 /* Resources */,
+				17DE4872A35A7F3B90D0EB8D /* Info.plist */,
+				10B805585A93B5ACB217E809 /* KetoCast.xcdatamodeld */,
+			);
+			path = KetoCast;
+			sourceTree = "<group>";
+		};
+		6E75A9BE1A1B2E4D838295A5 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				8DDE0FC77A8256C025EF71AD /* KetoCastApp.swift */,
+				1460A813C3A9E85D5C288673 /* AppState.swift */,
+			);
+			name = App;
+			sourceTree = "<group>";
+		};
+		0DAC5569626B8F68E297F3C1 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B47522B30574220E69588B73 /* FoodItem.swift */,
+				33EC0C44D7EEA71E3B0D793D /* FoodLog.swift */,
+				A83051D64B6CEDA8AB335660 /* UserProfile.swift */,
+				18F1890AEFA2575B3D8B54F7 /* WeightEntry.swift */,
+			);
+			name = Models;
+			sourceTree = "<group>";
+		};
+		9980606761BC4E0A35AC8AA1 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				61E413D4FB9DEF68511A4696 /* DashboardViewModel.swift */,
+				D0F971C77012792593C3DCFB /* LoggingViewModel.swift */,
+				C3F1B6F13621988492D48F8A /* AnalyticsViewModel.swift */,
+				F258F2352C6EA369F5415226 /* ProfileViewModel.swift */,
+			);
+			name = ViewModels;
+			sourceTree = "<group>";
+		};
+		6C56F2965D9FADE3E908A753 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				2EAE7994E88184D647536A75 /* FoodDatabaseService.swift */,
+				481AB9F69C02A62D790EC643 /* AIVisionService.swift */,
+				3A5C98196C378B37EB8F0627 /* VoiceLoggingService.swift */,
+				8515989C57E4117F068B3296 /* HealthKitService.swift */,
+				ECBF5AEDB48725B4B601E9D7 /* ClaudeCoachingService.swift */,
+				3058B026C8CD6EC8C54D5779 /* NotificationService.swift */,
+			);
+			name = Services;
+			sourceTree = "<group>";
+		};
+		3E6CDFE16F8E6B0B990BDE43 /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				EF7CF51A04FCD3C00CC33D54 /* CoreDataStack.swift */,
+				8F373E873CACAA1918CB5D84 /* LogStore.swift */,
+			);
+			name = Persistence;
+			sourceTree = "<group>";
+		};
+		BB1156001676BBF12B3329CB /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				EAADAD4CF5018A711148FE14 /* SecretsManager.swift */,
+				A2DA250D62334EA824BA5688 /* DesignSystem.swift */,
+			);
+			name = Utilities;
+			sourceTree = "<group>";
+		};
+		3CB8947DDD0AFEC04C567A1B /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				9E80CECC1B0B61959E8BEDDE /* MainTabView.swift */,
+				9FD31E97082730221C7D12BF /* Home */,
+				74977F42816C882732114C0A /* Logging */,
+				B81C4C3FFF7E273993F7A383 /* Analytics */,
+				ED1D307E4D741875AF92BE64 /* Profile */,
+				333D444ECED0B27230AD306E /* Onboarding */,
+			);
+			name = Views;
+			sourceTree = "<group>";
+		};
+		9FD31E97082730221C7D12BF /* Home */ = {
+			isa = PBXGroup;
+			children = (
+				0D10022B0879DA7B82598948 /* HomeView.swift */,
+			);
+			name = Home;
+			sourceTree = "<group>";
+		};
+		74977F42816C882732114C0A /* Logging */ = {
+			isa = PBXGroup;
+			children = (
+				28EF6A9B13185A6A25E1EED7 /* LoggingSheetView.swift */,
+			);
+			name = Logging;
+			sourceTree = "<group>";
+		};
+		B81C4C3FFF7E273993F7A383 /* Analytics */ = {
+			isa = PBXGroup;
+			children = (
+				E3285C3AC1337F5DD5CA9389 /* AnalyticsContainerView.swift */,
+			);
+			name = Analytics;
+			sourceTree = "<group>";
+		};
+		ED1D307E4D741875AF92BE64 /* Profile */ = {
+			isa = PBXGroup;
+			children = (
+				AF6AEDB0F6254E711990D642 /* ProfileView.swift */,
+			);
+			name = Profile;
+			sourceTree = "<group>";
+		};
+		333D444ECED0B27230AD306E /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				75A694FB0B3FD089CA52C0C7 /* OnboardingContainerView.swift */,
+			);
+			name = Onboarding;
+			sourceTree = "<group>";
+		};
+		97E269A332B71626AA285AF7 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				C4388F6827429DDBC8556752 /* Assets.xcassets */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		15B3C4DD8017D4D35C44E882 /* KetoCast */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 97969144226F358B127FBE98;
+			buildPhases = (
+				231F07609F492A1069531D39 /* Sources */,
+				AF6EC2045C50CC681F76C832 /* Frameworks */,
+				83F1806E3B23658572CB1197 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KetoCast;
+			productName = KetoCast;
+			productReference = 395A56A3CC07FC7A9176EA55 /* KetoCast.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C7DFDB8C9D40A88E2348C23D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					15B3C4DD8017D4D35C44E882 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = D3484431A585DB87D7A78AA5;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 8DF547AD75BFFD09655F8266;
+			productRefGroup = 192043EC6F0337C818215876 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				15B3C4DD8017D4D35C44E882 /* KetoCast */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		83F1806E3B23658572CB1197 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AEE22FD42FBEB64998C49F75 /* Assets.xcassets in Resources */,
+				2A32517F411AE347759FDD2C /* KetoCast.xcdatamodeld in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		231F07609F492A1069531D39 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F134045229FD831D7533792C /* KetoCastApp.swift in Sources */,
+				C44653C34CFC2296F25F2095 /* AppState.swift in Sources */,
+				D96F19389895050426CCB45B /* FoodItem.swift in Sources */,
+				EA2706D87E47D05AAB2A4071 /* FoodLog.swift in Sources */,
+				8DA5B0684B122664C1F45B42 /* UserProfile.swift in Sources */,
+				C252C50392E8A6940FDC767B /* WeightEntry.swift in Sources */,
+				521E2A51E982F1EE50060D52 /* DashboardViewModel.swift in Sources */,
+				C7A20DBF357C835FD8D62569 /* LoggingViewModel.swift in Sources */,
+				EF9FAB38E7553260BFE14460 /* AnalyticsViewModel.swift in Sources */,
+				1807CB97D32C6151F1FCBA65 /* ProfileViewModel.swift in Sources */,
+				1405EBD112A1AB97D48C3F63 /* MainTabView.swift in Sources */,
+				ECD87171DED5D683CF17758D /* HomeView.swift in Sources */,
+				DE0E30297A812CFEB530F326 /* LoggingSheetView.swift in Sources */,
+				1ABC8CBB1845B0DDAD4F7041 /* AnalyticsContainerView.swift in Sources */,
+				77F80480DE44C12AA32E964B /* OnboardingContainerView.swift in Sources */,
+				F233305AC383297FC22C083B /* ProfileView.swift in Sources */,
+				928E7C19D1430EB8FAEB727B /* FoodDatabaseService.swift in Sources */,
+				1B82AD2C90771AAB734C69B7 /* AIVisionService.swift in Sources */,
+				EF14B83BE663B18657ED1B1E /* VoiceLoggingService.swift in Sources */,
+				08FB067BE88CD7D9C370E3AE /* HealthKitService.swift in Sources */,
+				3E928730A63EE0CD31C13884 /* ClaudeCoachingService.swift in Sources */,
+				4A0E0789547C18E5ECB414A6 /* NotificationService.swift in Sources */,
+				4CE7014B9B662E90921ED44E /* CoreDataStack.swift in Sources */,
+				B78AD3E677F0B68334F70F75 /* LogStore.swift in Sources */,
+				50AAB0FB0677D921101883C9 /* SecretsManager.swift in Sources */,
+				F2CF48F61F38310D1FB7A3E3 /* DesignSystem.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		CD1E3A8636D0F0BD063903A2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				BUILD_LIBRARY_FOR_DISTRIBUTION = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_CYCLE = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)",);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		932BCBD983F4A033B5BA9681 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C623627A6CE3E845C7234758 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KetoCast/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.ketocast.app";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A240E262126AA2E2B9C2D568 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KetoCast/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.ketocast.app";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		D3484431A585DB87D7A78AA5 /* Build configuration list for PBXProject KetoCast */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CD1E3A8636D0F0BD063903A2 /* Debug */,
+				932BCBD983F4A033B5BA9681 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		97969144226F358B127FBE98 /* Build configuration list for PBXNativeTarget KetoCast */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C623627A6CE3E845C7234758 /* Debug */,
+				A240E262126AA2E2B9C2D568 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = C7DFDB8C9D40A88E2348C23D /* Project object */;
+}
