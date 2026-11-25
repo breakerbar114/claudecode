@@ -1,6 +1,6 @@
 # Deal Underwriter
 
-Type an address and get the **maximum price that cash flows for you**, under 9 financing structures at once. Every input is a slider.
+Type an address and the AI underwrites it: every assumption is filled in from data (rent comps, tax bill, PM rates, building age, Freddie Mac, FRED) with its source shown. You get the **max offer that cash flows**, under 8 financing structures. Change any number and it turns amber, shows what the AI said, and can be undone one at a time or all at once.
 
 ## Run it
 
@@ -40,19 +40,18 @@ Each value and rent figure shows a confidence label taken from the AVM's range (
 
 ## Structures
 
-Conventional · DSCR · FHA house hack · All cash · **Subject-To** · **Hybrid (Sub-To + seller carry)** · **Seller finance** (IO, amortization, balloon with refi at market) · **Morby Method** (bank 1st + seller-carried 2nd for the down payment) · **BRRRR** (hard money → cash-out refi on ARV).
+Conventional · DSCR · FHA house hack · **Subject-To** · **Hybrid (Sub-To + seller carry)** · **Seller finance** (IO, amortization, balloon with refi at market) · **Morby Method** (bank 1st + seller-carried 2nd for the down payment) · **BRRRR** (hard money → cash-out refi on ARV).
 
 For Sub-To, the seller's existing loan is estimated from their last sale price, date and that year's average rate. Replace the estimate with the real mortgage statement.
 
 ## Inflation & the Fed rate
 
 - **Beat inflation** (on by default): cash-on-cash must be at least the latest CPI year-over-year, so the cash you put in isn't losing buying power.
-- **All-cash hurdle**: an all-cash buy has to beat inflation, the Fed rate, or the Fed rate plus a risk premium you choose. It never goes below inflation, so the max offer is always a real number, never "Any".
-- **Your cash vs. the Fed rate** panel: the same dollars in the property vs. parked at the Fed rate. It shows year-1 income, real yield, ending wealth in nominal and today's dollars, and real IRR, plus the most you can pay all cash under each hurdle.
+- **Your cash vs. the Fed rate** panel: the same dollars in the property vs. parked at the Fed rate. It shows year-1 income, real yield, ending wealth in nominal and today's dollars, and real IRR.
 
 ## Max-offer solver
 
-`maxPrice()` in `src/lib/model.ts` bisects on price to find the highest price that meets your targets: cash flow per door, beating inflation, plus optional DSCR and cash-on-cash. For all cash it applies the all-cash hurdle. For BRRRR it also caps the cash left in the deal.
+`maxPrice()` in `src/lib/model.ts` bisects on price to find the highest price that meets your targets: cash flow per door, beating inflation, plus optional DSCR and cash-on-cash. For BRRRR it also caps the cash left in the deal.
 
 ## Tests
 

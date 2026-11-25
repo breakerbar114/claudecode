@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Rec, deviation } from "../lib/recommend";
 
-type Unit = "$" | "%" | "yrs" | "mo" | "x" | "" | "units";
+export type Unit = "$" | "%" | "yrs" | "mo" | "x" | "" | "units";
 
 interface Props {
   label: string;
@@ -15,9 +15,11 @@ interface Props {
   marker?: { value: number; label: string };
   /** Fixed recommended value: drawn on the track, explained under it, one click to apply. */
   rec?: Rec;
+  /** Inside an assumption row: no label, no recommendation text, just the value box and the track. */
+  bare?: boolean;
 }
 
-const fmtVal = (v: number, unit: Unit) => {
+export const fmtVal = (v: number, unit: Unit) => {
   if (unit === "$") return "$" + Math.round(v).toLocaleString("en-US");
   if (unit === "%") return `${+v.toFixed(3)}%`;
   if (unit === "x") return `${v.toFixed(2)}×`;
@@ -26,7 +28,7 @@ const fmtVal = (v: number, unit: Unit) => {
   return String(v);
 };
 
-export function Slider({ label, value, onChange, min, max, step = 1, unit = "", hint, marker, rec }: Props) {
+export function Slider({ label, value, onChange, min, max, step = 1, unit = "", hint, marker, rec, bare }: Props) {
   const [text, setText] = useState(String(value));
   const [editing, setEditing] = useState(false);
   useEffect(() => {
@@ -41,12 +43,13 @@ export function Slider({ label, value, onChange, min, max, step = 1, unit = "", 
   const pct = (v: number) => ((v - lo) / (hi - lo || 1)) * 100;
 
   return (
-    <div className="slider">
+    <div className={`slider ${bare ? "bare" : ""}`}>
       <div className="slider-head">
+        {bare ? <span className="muted small">Drag, or click the number to type it</span> : (
         <label title={hint}>
           {label}
           {hint && <span className="hint-dot" aria-hidden>?</span>}
-        </label>
+        </label>)}
         {editing ? (
           <input
             className="slider-input"
@@ -85,7 +88,7 @@ export function Slider({ label, value, onChange, min, max, step = 1, unit = "", 
         )}
         {rec && <span className="slider-rec" style={{ left: `${pct(rec.value)}%` }} title={`Recommended: ${fmtVal(rec.value, unit)}`} />}
       </div>
-      {rec && (
+      {rec && !bare && (
         <div className={`rec-line ${atRec ? "at" : dev?.aggressive ? "aggr" : ""}`}>
           <span className="rec-badge">{atRec ? "✓ Recommended" : `Recommended ${fmtVal(rec.value, unit)}`}</span>
           {!atRec && dev && (

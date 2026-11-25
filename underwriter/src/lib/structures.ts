@@ -12,7 +12,6 @@ export const STRUCTURES: StructureInfo[] = [
   { id: "conventional", name: "Conventional", short: "Conv", creative: false, blurb: "25% down investor loan at market rate + investor spread." },
   { id: "dscr", name: "DSCR Loan", short: "DSCR", creative: false, blurb: "Qualifies on the property's rent, not your income. Higher rate, 1–2 pts." },
   { id: "fha", name: "FHA House Hack", short: "FHA", creative: false, blurb: "3.5% down on 1–4 units; you live in one for a year." },
-  { id: "cash", name: "All Cash", short: "Cash", creative: false, blurb: "No debt. Baseline for the property's true yield (cap rate)." },
   { id: "subto", name: "Subject-To", short: "Sub-To", creative: true, blurb: "Take over the seller's existing low-rate mortgage; pay their equity in cash." },
   { id: "hybrid", name: "Hybrid (Sub-To + Seller Carry)", short: "Hybrid", creative: true, blurb: "Take over the existing loan and have the seller carry their equity as a 2nd." },
   { id: "sellerFinance", name: "Seller Finance", short: "Seller Fin", creative: true, blurb: "Free-and-clear seller becomes the bank. Their price, your terms." },

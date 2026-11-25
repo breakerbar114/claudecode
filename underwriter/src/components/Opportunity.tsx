@@ -1,28 +1,19 @@
-import { Deal, HURDLE_LABEL, Result, Targets, Terms, maxPrice, money, vsRiskFree } from "../lib/model";
+import { Deal, Result, money, vsRiskFree } from "../lib/model";
 
 const pct = (n: number, d = 1) => (Number.isFinite(n) ? `${n.toFixed(d)}%` : "∞");
 const tone = (n: number) => (n >= 0 ? "good" : "bad");
 
 /** This deal vs. parking the same cash at the Fed rate, in nominal and inflation-adjusted terms. */
-export function OpportunityPanel({ result, deal, cashTerms, targets, tbill, asOf, onSetPrice }: {
+export function OpportunityPanel({ result, deal, tbill, asOf }: {
   result: Result;
   deal: Deal;
-  cashTerms: Terms;
-  targets: Targets;
   tbill: number | null;
   asOf: { fed: string | null; cpi: string | null };
-  onSetPrice: (p: number) => void;
 }) {
   const o = vsRiskFree(result, deal);
 
-  const ladder = (["inflation", "fed", "fedPlus"] as const).map((h) => {
-    const rate = h === "inflation" ? deal.inflationPct : h === "fed" ? deal.riskFreePct : deal.riskFreePct + targets.cashPremiumPct;
-    return { h, rate, ...maxPrice("cash", deal, cashTerms, { ...targets, cashHurdle: h, noInflationFloor: true }) };
-  });
-
   return (
-    <div className="card">
-      <h3>Your cash vs. the Fed rate</h3>
+    <div>
       <p className="muted small" style={{ marginTop: -6 }}>
         Fed funds {deal.riskFreePct}%{asOf.fed ? ` (${asOf.fed})` : ""} · inflation (CPI, YoY) {deal.inflationPct}%{asOf.cpi ? ` (${asOf.cpi.slice(0, 7)})` : ""}
         {tbill != null ? ` · 3-mo T-bill ${tbill}%` : ""}
@@ -60,20 +51,8 @@ export function OpportunityPanel({ result, deal, cashTerms, targets, tbill, asOf
         <p className="muted">All your cash comes back out at the refi, so there's nothing to compare against the Fed rate.</p>
       )}
 
-      <h4>Most you can pay all cash, by hurdle</h4>
-      <table className="plain">
-        <tbody>
-          {ladder.map((l) => (
-            <tr key={l.h} className={targets.cashHurdle === l.h ? "total" : ""}>
-              <td>Cash yield {HURDLE_LABEL[l.h]} ({pct(l.rate, 2)})</td>
-              <td>{l.price === null ? "no price works" : `${money(l.price)}${l.capped ? "+" : ""}`}</td>
-              <td>{l.price !== null && !l.capped && <button className="link" onClick={() => onSetPrice(l.price!)}>Use</button>}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
       <p className="muted small">
-        Each price uses that hurdle by itself, along with your cash-flow-per-door target. Your max offer up top never drops below the inflation test. You can't buy the Fed rate directly, but T-bills and money-market funds track it. Their interest is taxed as ordinary income, while rental cash flow is usually sheltered by depreciation, so after tax the gap is usually wider in the property's favor than shown here.
+        You can't buy the Fed rate directly, but T-bills and money-market funds track it. Their interest is taxed as ordinary income, while rental cash flow is usually sheltered by depreciation, so after tax the gap is usually wider in the property's favor than shown here.
       </p>
     </div>
   );

@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Slider, Toggle } from "./components/Slider";
+import { Assumption, AssumptionToggle, AsmGroup, isEdited } from "./components/Assumption";
 import { PriceCurve, Sensitivity } from "./components/Charts";
-import { Deal, HURDLE_LABEL, StructureId, Targets, Terms, fmt, money, maxPrice, requiredCoc, scorecard, underwrite } from "./lib/model";
 import { OpportunityPanel } from "./components/Opportunity";
 import { RentCompsPanel } from "./components/RentComps";
-import { RentComp, Subject, runComps } from "./lib/comps";
-import { Rec, RecKey, recommend, stateFromAddress } from "./lib/recommend";
+import { Unit } from "./components/Slider";
+import { Deal, Result, StructureId, Targets, Terms, fmt, money, maxPrice, scorecard, underwrite } from "./lib/model";
 import { STRUCTURES, defaultTerms } from "./lib/structures";
-import { Keys, Lookup, Rates, STATIC, confidence, getRates, lookup, store } from "./lib/api";
+import { Keys, Lookup, Rates, STATIC, getRates, lookup, store } from "./lib/api";
 import { estimateExistingLoan } from "./lib/estimate";
 import { initialPayment } from "./lib/finance";
+import { RentComp, Subject, runComps } from "./lib/comps";
+import { Rec, RecKey, recommend, stateFromAddress } from "./lib/recommend";
 
+// The deal the AI starts from before any lookup: a typical suburban single-family rental.
 const SAMPLE: Deal = {
   price: 285000, marketValue: 295000, arv: 295000, units: 1, rent: 2250, otherIncome: 0,
   vacancyPct: 7, mgmtPct: 10, repairsPct: 7, capexPct: 7, taxRatePct: 1.1, taxesAnnualActual: 2900,
@@ -18,87 +20,163 @@ const SAMPLE: Deal = {
   closingCostPct: 3, rehab: 0, marketRatePct: 6.5, rentGrowthPct: 3, expenseGrowthPct: 3.5,
   appreciationPct: 3, holdYears: 7, sellingCostPct: 7, inflationPct: 3, riskFreePct: 4,
 };
+const SAMPLE_SUBJECT = { beds: 3, baths: 2, sqft: 1500, yearBuilt: 1995 };
 
 const DEFAULT_TARGETS: Targets = { minCashFlow: 200, minDscr: 1.25, minCoc: 8, useDscr: true, useCoc: false, maxCashLeft: 10000, beatInflation: true, cashHurdle: "inflation", cashPremiumPct: 2 };
 
 type TermsMap = Record<StructureId, Terms>;
-const allTerms = (rate: number, price: number, prev?: Partial<TermsMap>): TermsMap =>
-  Object.fromEntries(STRUCTURES.map((s) => [s.id, { ...defaultTerms(s.id, rate, price), ...(prev?.[s.id] ?? {}) }])) as TermsMap;
+type SubjectFacts = Subject & { yearBuilt?: number };
+type LoanEst = { balance: number; ratePct: number; yearsLeft: number } | null;
 
+/**
+ * Two layers: what the AI set (aiDeal + live recommendations + default terms) and what you changed (overrides).
+ * The deal on screen is always AI ⊕ overrides, so every edit is visible, countable and undoable.
+ */
 interface Saved {
   name: string;
-  deal: Deal;
-  terms: TermsMap;
+  aiDeal: Deal;
+  dealOv: Partial<Deal>;
+  termsOv: Partial<Record<StructureId, Partial<Terms>>>;
+  loanEst: LoanEst;
   structure: StructureId;
   lookup: Lookup | null;
-  comps?: RentComp[];
-  subject?: SubjectFacts;
+  comps: RentComp[];
+  subject: SubjectFacts;
+  address: string;
 }
-
-type SubjectFacts = Subject & { yearBuilt?: number };
 
 function compsFromLookup(l: Lookup): RentComp[] {
   return (l.rent?.comps ?? [])
     .filter((c) => c.price > 0)
-    .map((c, i) => ({
-      id: `rc${i}`,
-      address: c.address,
-      rent: c.price,
-      beds: c.beds,
-      baths: c.baths,
-      sqft: c.sqft,
-      distance: c.distance,
-      date: c.date,
-      correlation: c.correlation,
-      include: true,
-      source: "rentcast" as const,
-    }));
+    .map((c, i) => ({ id: `rc${i}`, address: c.address, rent: c.price, beds: c.beds, baths: c.baths, sqft: c.sqft, distance: c.distance, date: c.date, correlation: c.correlation, include: true, source: "rentcast" as const }));
 }
 
+const recPatch = (r: Partial<Record<RecKey, Rec>>): Partial<Deal> => {
+  const p: Partial<Deal> = {};
+  for (const [k, v] of Object.entries(r)) if (v) (p as Record<string, number>)[k] = v.value;
+  if (r.taxRatePct) p.reassessTaxes = true;
+  return p;
+};
+
+const LABELS: Partial<Record<keyof Deal | keyof Terms, string>> = {
+  rent: "Rent", vacancyPct: "Vacancy", taxRatePct: "Tax rate", insuranceAnnual: "Insurance", mgmtPct: "Management",
+  repairsPct: "Repairs", capexPct: "CapEx", marketValue: "Value", rehab: "Rehab", arv: "ARV", closingCostPct: "Closing costs",
+  units: "Units", otherIncome: "Other income", hoaMonthly: "HOA", utilitiesMonthly: "Utilities", otherExpMonthly: "Other expenses",
+  reassessTaxes: "Tax reassessment", rentGrowthPct: "Rent growth", expenseGrowthPct: "Expense growth", appreciationPct: "Appreciation",
+  holdYears: "Hold period", sellingCostPct: "Selling costs", inflationPct: "Inflation", riskFreePct: "Fed rate",
+  taxesAnnualActual: "Tax bill", marketRatePct: "Market rate",
+};
+
+type Tab = "checks" | "comps" | "proforma" | "loans" | "projection" | "sensitivity" | "fed" | "sources";
+
 export default function App() {
-  const saved = store.get<Saved | null>("uw:current", null);
-  const [deal, setDeal] = useState<Deal>({ ...SAMPLE, ...(saved?.deal ?? {}) });
-  const [termsBy, setTermsBy] = useState<TermsMap>(saved?.terms ? allTerms(SAMPLE.marketRatePct, SAMPLE.price, saved.terms) : allTerms(SAMPLE.marketRatePct, SAMPLE.price));
-  const [structure, setStructure] = useState<StructureId>(saved?.structure ?? "conventional");
+  const saved = store.get<Saved | null>("uw:v2", null);
+  const [aiDeal, setAiDeal] = useState<Deal>({ ...SAMPLE, ...(saved?.aiDeal ?? {}) });
+  const [dealOv, setDealOv] = useState<Partial<Deal>>(saved?.dealOv ?? {});
+  const [termsOv, setTermsOv] = useState<Partial<Record<StructureId, Partial<Terms>>>>(saved?.termsOv ?? {});
+  const [loanEst, setLoanEst] = useState<LoanEst>(saved?.loanEst ?? null);
+  const [structure, setStructure] = useState<StructureId>(saved?.structure && STRUCTURES.some((s) => s.id === saved.structure) ? saved.structure : "conventional");
   const [targets, setTargets] = useState<Targets>({ ...DEFAULT_TARGETS, ...store.get<Partial<Targets>>("uw:targets", {}) });
   const [macro, setMacro] = useState<Rates | null>(saved?.lookup?.rates ?? null);
   const [data, setData] = useState<Lookup | null>(saved?.lookup ?? null);
-  const [address, setAddress] = useState(saved?.lookup?.address ?? "");
+  const [address, setAddress] = useState(saved?.address ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [keys, setKeys] = useState<Keys>(store.get("uw:keys", { rentcast: "", census: "" }));
   const [showKeys, setShowKeys] = useState(false);
-  const [library, setLibrary] = useState<Saved[]>(store.get("uw:library", []));
+  const [library, setLibrary] = useState<Saved[]>(store.get("uw:library2", []));
   const [comps, setComps] = useState<RentComp[]>(saved?.comps ?? []);
-  const [subject, setSubject] = useState<SubjectFacts>(saved?.subject ?? {});
-  const [applyRecs, setApplyRecs] = useState(false);
-  const [tab, setTab] = useState<"proforma" | "projection" | "comps">("proforma");
+  const [subject, setSubject] = useState<SubjectFacts>(saved?.subject ?? SAMPLE_SUBJECT);
+  const [tab, setTab] = useState<Tab>("checks");
+  const [openRow, setOpenRow] = useState<string | null>(null);
+  const toggleRow = (id: string) => setOpenRow((o) => (o === id ? null : id));
 
-  const terms = termsBy[structure];
-  const setD = (k: keyof Deal) => (v: number | boolean) => setDeal((d) => ({ ...d, [k]: v }));
-  const setT = (k: keyof Terms) => (v: number | boolean) => setTermsBy((m) => ({ ...m, [structure]: { ...m[structure], [k]: v } }));
-  const setTg = (k: keyof Targets) => (v: number | boolean) => setTargets((t) => ({ ...t, [k]: v }));
-
-  useEffect(() => store.set("uw:current", { name: "current", deal, terms: termsBy, structure, lookup: data, comps, subject }), [deal, termsBy, structure, data, comps, subject]);
+  useEffect(
+    () => store.set("uw:v2", { name: "current", aiDeal, dealOv, termsOv, loanEst, structure, lookup: data, comps, subject, address }),
+    [aiDeal, dealOv, termsOv, loanEst, structure, data, comps, subject, address],
+  );
   useEffect(() => store.set("uw:targets", targets), [targets]);
   useEffect(() => store.set("uw:keys", keys), [keys]);
-  useEffect(() => store.set("uw:library", library), [library]);
-  // Inflation and the Fed rate are refreshed on every load. They're market data, not deal assumptions.
+  useEffect(() => store.set("uw:library2", library), [library]);
+  // Market data refreshes every load and flows into the AI layer.
   useEffect(() => {
     getRates().then((r) => {
       if (!r) return;
       setMacro(r);
-      setDeal((d) => ({ ...d, ...macroFields(r), ...(saved ? {} : { marketRatePct: r.thirtyYear }) }));
-      if (!saved) setTermsBy(allTerms(r.thirtyYear, SAMPLE.price));
+      setAiDeal((d) => ({ ...d, marketRatePct: r.thirtyYear, ...macroFields(r) }));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ---------- AI layer ----------
+  const preRec = { ...aiDeal, ...dealOv };
+  const compResult = useMemo(() => runComps(comps, subject), [comps, subject]);
+  const propState = data?.geo?.state ?? stateFromAddress(address);
+  const recs = useMemo(
+    () =>
+      recommend({
+        units: preRec.units,
+        state: propState,
+        yearBuilt: subject.yearBuilt,
+        marketValue: data?.value?.estimate ?? preRec.marketValue,
+        comps: compResult,
+        rentAvmPerUnit: data?.rent?.perUnit,
+        rentAvmSource: data?.rent?.source,
+        lookupTaxRate: data?.taxes.ratePct,
+        lookupTaxSource: data?.taxes.source,
+        lookupInsurance: data?.insurance.annual,
+        currentRent: aiDeal.rent,
+      }),
+    [preRec.units, propState, subject.yearBuilt, data, preRec.marketValue, compResult, aiDeal.rent],
+  );
+  const aiFull: Deal = useMemo(() => ({ ...aiDeal, ...recPatch(recs) }), [aiDeal, recs]);
+  const deal: Deal = useMemo(() => ({ ...aiFull, ...dealOv }), [aiFull, dealOv]);
+
+  const aiTerms: TermsMap = useMemo(() => {
+    const t = Object.fromEntries(STRUCTURES.map((s) => [s.id, defaultTerms(s.id, aiDeal.marketRatePct, aiDeal.marketValue)])) as TermsMap;
+    if (loanEst && loanEst.balance > 0)
+      for (const id of ["subto", "hybrid"] as const) t[id] = { ...t[id], existingBalance: loanEst.balance, existingRatePct: loanEst.ratePct, existingYearsLeft: Math.max(1, Math.round(loanEst.yearsLeft)) };
+    return t;
+  }, [aiDeal.marketRatePct, aiDeal.marketValue, loanEst]);
+  const termsBy: TermsMap = useMemo(
+    () => Object.fromEntries(STRUCTURES.map((s) => [s.id, { ...aiTerms[s.id], ...(termsOv[s.id] ?? {}) }])) as TermsMap,
+    [aiTerms, termsOv],
+  );
+  const terms = termsBy[structure];
+
+  // Setting a value equal to the AI's drops the override, so "edited" always means "different from the AI".
+  const setD = (k: keyof Deal) => (v: number | boolean) =>
+    setDealOv((o) => {
+      const n = { ...o };
+      const ai = aiFull[k];
+      if (k !== "price" && (typeof v === "boolean" ? v === ai : !isEdited(v, ai as number))) delete n[k];
+      else (n as Record<string, unknown>)[k] = v;
+      return n;
+    });
+  const resetD = (k: keyof Deal) => () => setDealOv((o) => { const n = { ...o }; delete n[k]; return n; });
+  const setT = (k: keyof Terms) => (v: number | boolean) =>
+    setTermsOv((m) => {
+      const cur = { ...(m[structure] ?? {}) };
+      const ai = aiTerms[structure][k];
+      if (typeof v === "boolean" ? v === ai : !isEdited(v, ai as number)) delete cur[k];
+      else (cur as Record<string, unknown>)[k] = v;
+      return { ...m, [structure]: cur };
+    });
+  const resetT = (k: keyof Terms) => () => setTermsOv((m) => { const cur = { ...(m[structure] ?? {}) }; delete cur[k]; return { ...m, [structure]: cur }; });
+  const setTg = (k: keyof Targets) => (v: number | boolean) => setTargets((t) => ({ ...t, [k]: v }));
+
+  const edits = [
+    ...(Object.keys(dealOv) as (keyof Deal)[]).filter((k) => k !== "price").map((k) => LABELS[k] ?? k),
+    ...(Object.keys(termsOv[structure] ?? {}) as (keyof Terms)[]).map((k) => TERM_LABEL[k] ?? k),
+  ];
+  const resetAll = () => {
+    setDealOv((o) => (o.price != null ? { price: o.price } : {}));
+    setTermsOv({});
+  };
 
   async function runLookup(e?: React.FormEvent) {
     e?.preventDefault();
     if (!address.trim()) return;
     if (STATIC) {
-      // Hosted version: no data server. The address labels the deal and drives the lookup links.
       setData(null);
       return;
     }
@@ -109,34 +187,28 @@ export default function App() {
       setData(l);
       setMacro(l.rates);
       const units = Math.max(1, l.property.units || 1);
-      const value = l.value?.estimate ?? deal.marketValue;
-      const rate = l.rates.thirtyYear;
-      const taxRate = l.taxes.ratePct ?? deal.taxRatePct;
-      const next: Deal = {
-        ...deal,
+      const value = l.value?.estimate ?? aiDeal.marketValue;
+      const taxRate = l.taxes.ratePct ?? aiDeal.taxRatePct;
+      setAiDeal({
+        ...SAMPLE,
         price: Math.round(value / 1000) * 1000,
         marketValue: value,
         arv: value,
         units,
-        rent: l.rent ? Math.round(l.rent.perUnit * units) : deal.rent,
+        rent: l.rent ? Math.round(l.rent.perUnit * units) : aiDeal.rent,
         taxRatePct: +taxRate.toFixed(3),
         taxesAnnualActual: l.taxes.annualActual ?? Math.round((value * taxRate) / 100),
         insuranceAnnual: l.insurance.annual,
         hoaMonthly: l.property.hoaMonthly ?? 0,
-        marketRatePct: rate,
+        marketRatePct: l.rates.thirtyYear,
         ...macroFields(l.rates),
-        rehab: 0,
-      };
-      setDeal(next);
-      const t = allTerms(rate, next.price);
-      const est = estimateExistingLoan(l.property.lastSalePrice, l.property.lastSaleDate, rate);
-      if (est && est.balance > 0) {
-        for (const id of ["subto", "hybrid"] as const) t[id] = { ...t[id], existingBalance: est.balance, existingRatePct: est.ratePct, existingYearsLeft: Math.max(1, Math.round(est.yearsLeft)) };
-      }
-      setTermsBy(t);
+      });
+      setDealOv({});
+      setTermsOv({});
+      const est = estimateExistingLoan(l.property.lastSalePrice, l.property.lastSaleDate, l.rates.thirtyYear);
+      setLoanEst(est && est.balance > 0 ? { balance: est.balance, ratePct: est.ratePct, yearsLeft: est.yearsLeft } : null);
       setComps(compsFromLookup(l));
       setSubject({ beds: l.property.beds, baths: l.property.baths, sqft: l.property.sqft, yearBuilt: l.property.yearBuilt });
-      setApplyRecs(true); // start the underwrite from the recommended values once they're computed
     } catch (err) {
       setError(String((err as Error).message || err));
     } finally {
@@ -144,88 +216,75 @@ export default function App() {
     }
   }
 
+  // ---------- Results ----------
   const result = useMemo(() => underwrite(structure, deal, terms), [structure, deal, terms]);
   const score = useMemo(() => scorecard(result, deal), [result, deal]);
-
-  // ---- Comps and recommended values. Built from property facts and data, never from slider positions. ----
-  const compResult = useMemo(() => runComps(comps, subject), [comps, subject]);
-  const propState = data?.geo?.state ?? stateFromAddress(address);
-  const recs = useMemo(
-    () =>
-      recommend({
-        units: deal.units,
-        state: propState,
-        yearBuilt: subject.yearBuilt,
-        marketValue: data?.value?.estimate ?? deal.marketValue,
-        comps: compResult,
-        rentAvmPerUnit: data?.rent?.perUnit,
-        rentAvmSource: data?.rent?.source,
-        lookupTaxRate: data?.taxes.ratePct,
-        lookupTaxSource: data?.taxes.source,
-        lookupInsurance: data?.insurance.annual,
-        currentRent: deal.rent,
-      }),
-    // currentRent only matters when there's no rent recommendation; leave it out so recommendations don't follow the slider.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [deal.units, propState, subject.yearBuilt, data, deal.marketValue, compResult],
-  );
-  const recPatch = (r: Partial<Record<RecKey, Rec>>): Partial<Deal> => {
-    const p: Partial<Deal> = {};
-    for (const [k, v] of Object.entries(r)) if (v) (p as Record<string, number>)[k] = v.value;
-    if (r.taxRatePct) p.reassessTaxes = true;
-    return p;
-  };
-  const useAllRecs = () => setDeal((d) => ({ ...d, ...recPatch(recs) }));
-  useEffect(() => {
-    if (!applyRecs) return;
-    setApplyRecs(false);
-    useAllRecs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyRecs, recs]);
-  const recDeal = useMemo(() => ({ ...deal, ...recPatch(recs) }), [deal, recs]);
-  const recOffer = useMemo(() => maxPrice(structure, recDeal, terms, targets), [structure, recDeal, terms, targets]);
-  const offRec = (Object.keys(recs) as RecKey[]).filter((k) => Math.abs((deal[k] as number) - recs[k]!.value) > Math.max(0.01, Math.abs(recs[k]!.value) * 0.005));
-  const offers = useMemo(
-    () => STRUCTURES.map((s) => ({ s, ...maxPrice(s.id, deal, termsBy[s.id], targets) })),
-    [deal, termsBy, targets],
-  );
+  const offers = useMemo(() => STRUCTURES.map((s) => ({ s, ...maxPrice(s.id, deal, termsBy[s.id], targets) })), [deal, termsBy, targets]);
   const current = offers.find((o) => o.s.id === structure)!;
-  const reqCoc = requiredCoc(structure, deal, targets);
+  const aiOffer = useMemo(
+    () => (edits.length ? maxPrice(structure, { ...aiFull, price: deal.price }, aiTerms[structure], targets) : current),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [edits.length, structure, aiFull, deal.price, aiTerms, targets, current],
+  );
   const targetCF = targets.minCashFlow * deal.units;
   const ref = deal.marketValue || deal.price;
-  const valConf = confidence(data?.value?.estimate, data?.value?.low, data?.value?.high);
-  const rentConf = confidence(data?.rent?.perUnit, data?.rent?.low, data?.rent?.high);
   const info = STRUCTURES.find((s) => s.id === structure)!;
+  const sourcesUsed = data ? data.sources.length : 0;
 
   const saveDeal = () => {
     const name = data?.address || address.trim() || `Deal ${library.length + 1}`;
-    setLibrary((lib) => [{ name, deal, terms: termsBy, structure, lookup: data, comps, subject }, ...lib.filter((x) => x.name !== name)].slice(0, 30));
+    setLibrary((lib) => [{ name, aiDeal, dealOv, termsOv, loanEst, structure, lookup: data, comps, subject, address }, ...lib.filter((x) => x.name !== name)].slice(0, 30));
   };
   const loadDeal = (s: Saved) => {
-    setDeal(s.deal);
-    setTermsBy(allTerms(s.deal.marketRatePct, s.deal.price, s.terms));
-    setStructure(s.structure);
+    setAiDeal(s.aiDeal);
+    setDealOv(s.dealOv);
+    setTermsOv(s.termsOv);
+    setLoanEst(s.loanEst);
+    setStructure(STRUCTURES.some((x) => x.id === s.structure) ? s.structure : "conventional");
     setData(s.lookup);
-    setComps(s.comps ?? []);
-    setSubject(s.subject ?? {});
-    setAddress(s.lookup?.address ?? "");
+    setComps(s.comps);
+    setSubject(s.subject);
+    setAddress(s.address);
   };
+
+  // Shared props for number rows on the deal.
+  const dRow = (k: keyof Deal, label: string, unit: Unit, min: number, max: number, step: number, source?: string, why?: string, extra?: Partial<React.ComponentProps<typeof Assumption>>) => (
+    <Assumption
+      key={k}
+      id={k}
+      label={label}
+      value={deal[k] as number}
+      ai={k === "price" ? undefined : (aiFull[k] as number)}
+      unit={unit}
+      min={min}
+      max={max}
+      step={step}
+      source={source}
+      why={why}
+      open={openRow === k}
+      onToggle={toggleRow}
+      onChange={setD(k)}
+      onReset={resetD(k)}
+      {...extra}
+    />
+  );
+  const recSource = (k: RecKey, fallback: string) => (recs[k] ? fallback : "Default");
+  const rentSource = compResult.recommended ? `${compResult.used} comps` : data?.rent ? "Rent AVM" : "Estimate";
+  const taxSource = data?.taxes.annualActual ? "Tax bill" : data?.taxes.ratePct ? "County data" : propState ? `${propState} avg` : "Estimate";
 
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="logo">▲</span> Deal Underwriter
-        </div>
+        <div className="brand"><span className="logo">▲</span> Deal Underwriter</div>
         <form className="search" onSubmit={runLookup}>
-          <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Type a property address — e.g. 123 Main St, Columbus, OH 43215" aria-label="Property address" />
-          <button type="submit" disabled={loading}>{loading ? "Pulling data…" : STATIC ? "Set address" : "Underwrite"}</button>
+          <input id="address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Type a property address — e.g. 123 Main St, Columbus, OH 43215" aria-label="Property address" />
+          <button type="submit" disabled={loading}>{loading ? "Underwriting…" : STATIC ? "Set address" : "Underwrite"}</button>
         </form>
         <div className="top-actions">
           <button className="ghost" onClick={saveDeal}>Save</button>
           {library.length > 0 && (
             <select className="ghost" value="" onChange={(e) => { const s = library[+e.target.value]; if (s) loadDeal(s); }} aria-label="Saved deals">
-              <option value="">Saved deals ({library.length})</option>
+              <option value="">Saved ({library.length})</option>
               {library.map((s, i) => <option key={i} value={i}>{s.name}</option>)}
             </select>
           )}
@@ -236,61 +295,52 @@ export default function App() {
       {showKeys && (
         <div className="keys card">
           <p>Keys are stored only in this browser and sent to your own server. Or set them in <code>.env</code> on the server.</p>
-          <label>RentCast API key <a href="https://app.rentcast.io/app/api" target="_blank" rel="noreferrer">get one</a> — parcel record, value AVM, rent AVM, comps, tax bill
+          <label>RentCast API key <a href="https://app.rentcast.io/app/api" target="_blank" rel="noreferrer">get one</a>: property record, value, rent comps, tax bill
             <input type="password" value={keys.rentcast} onChange={(e) => setKeys({ ...keys, rentcast: e.target.value })} />
           </label>
-          <label>Census API key <a href="https://api.census.gov/data/key_signup.html" target="_blank" rel="noreferrer">free</a> — tract rents, county tax rates (fallback)
+          <label>Census API key <a href="https://api.census.gov/data/key_signup.html" target="_blank" rel="noreferrer">free</a>: area rents and county tax rates when RentCast has nothing
             <input type="password" value={keys.census} onChange={(e) => setKeys({ ...keys, census: e.target.value })} />
           </label>
         </div>
       )}
-
       {error && <div className="banner bad">{error}</div>}
 
-      {/* ---------- Answer first ---------- */}
+      {/* ---------- The answer ---------- */}
       <section className="hero card">
         <div className="hero-main">
-          <div className="eyebrow">{data ? data.address : address.trim() ? address.trim() : "Sample deal — type an address above"}</div>
-          <div className="hero-answer">
-            {current.price === null ? (
-              <>No price works under <b>{info.name}</b> for {money(targets.minCashFlow)}/door/mo{Number.isFinite(reqCoc) ? ` at ≥ ${reqCoc.toFixed(2)}% cash-on-cash` : ""}{targets.useDscr && structure !== "cash" ? ` & DSCR ≥ ${targets.minDscr}` : ""}.</>
+          <div className="eyebrow">
+            {data?.address || address.trim() || "Sample deal · type an address above"}
+            {subject.beds != null && <> · {subject.beds} bd / {subject.baths ?? "?"} ba</>}
+            {subject.sqft ? <> · {fmt(subject.sqft)} sqft</> : null}
+            {subject.yearBuilt ? <> · built {subject.yearBuilt}</> : null}
+            {deal.units > 1 && <> · {deal.units} units</>}
+          </div>
+          <div className="hero-label">Max offer · {info.name}</div>
+          <div className="hero-price">{current.price === null ? "No price works" : `${money(current.price)}${current.capped ? "+" : ""}`}</div>
+          <p className="hero-verdict">{verdict(result, current.price, ref, targets, deal, score, info.name)}</p>
+          <div className={`ai-status ${edits.length ? "has-edits" : ""}`}>
+            {edits.length ? (
+              <>
+                <span className="dot" />
+                <span className="ai-text">
+                  You changed {edits.length} of the AI's numbers: {edits.slice(0, 4).join(", ")}{edits.length > 4 ? "…" : ""}.
+                  {aiOffer.price !== null && current.price !== null && aiOffer.price !== current.price && (
+                    <> AI max offer: <b>{money(aiOffer.price)}</b> ({current.price > aiOffer.price ? "+" : "−"}{money(Math.abs(current.price - aiOffer.price))} from your edits).</>
+                  )}
+                </span>
+                <button className="asm-reset" onClick={resetAll}>↺ Reset all to AI</button>
+              </>
             ) : (
               <>
-                Cash flows <b>{money(targets.minCashFlow)}/door</b>
-                {Number.isFinite(reqCoc) && <> and <b>{reqCoc.toFixed(2)}%</b> cash-on-cash</>} at{" "}
-                <span className="big">{money(current.price)}{current.capped ? "+" : ""}</span> or less
+                <span className="dot" />
+                <span className="ai-text">
+                  Every number is set by the AI
+                  {sourcesUsed ? ` from ${sourcesUsed} data sources` : compResult.used ? ` from ${compResult.used} rent comps and state data` : " from defaults and state data"}.
+                  Tap any assumption to see why or change it.
+                </span>
               </>
             )}
           </div>
-          <div className="hero-sub">
-            {info.name}
-            {Number.isFinite(reqCoc) && <> · {structure === "cash" && reqCoc > deal.inflationPct ? `cash yield ${HURDLE_LABEL[targets.cashHurdle]}` : targets.cashHurdle !== "inflation" && structure === "cash" ? "cash yield beats inflation (stricter than the Fed rate today)" : "cash yield beats inflation"}</>}
-            {current.price !== null && !current.capped && ref > 0 && (
-              <> · {((current.price / ref) * 100).toFixed(0)}% of {money(ref)} value · {current.price >= ref ? "works at full value" : `offer ${money(ref - current.price)} below value`}</>
-            )}
-            {current.price !== null && !current.capped && (
-              <button className="link" onClick={() => setDeal((d) => ({ ...d, price: current.price! }))}>Set price to max →</button>
-            )}
-          </div>
-          {offRec.length > 0 && recOffer.price !== null && (
-            <div className="hero-rec">
-              At recommended values: <b>{money(recOffer.price)}{recOffer.capped ? "+" : ""}</b> max offer
-              {current.price !== null && recOffer.price < current.price && <span className="bad"> · your inputs are {money(current.price - recOffer.price)} more optimistic</span>}
-              <button className="link" onClick={useAllRecs}>Use recommended →</button>
-            </div>
-          )}
-          {data && (
-            <div className="facts">
-              {data.property.type && <span>{data.property.type}</span>}
-              {data.property.beds != null && <span>{data.property.beds} bd / {data.property.baths} ba</span>}
-              {data.property.sqft && <span>{fmt(data.property.sqft)} sqft</span>}
-              {data.property.yearBuilt && <span>Built {data.property.yearBuilt}</span>}
-              {deal.units > 1 && <span>{deal.units} units</span>}
-              {data.property.lastSalePrice && <span>Last sold {money(data.property.lastSalePrice)} ({data.property.lastSaleDate?.slice(0, 10)})</span>}
-              <span>Value conf: {valConf.label}</span>
-              <span>Rent conf: {rentConf.label}</span>
-            </div>
-          )}
         </div>
         <div className="grade" data-grade={score.grade}>
           <div className="grade-letter">{score.grade}</div>
@@ -299,315 +349,350 @@ export default function App() {
       </section>
 
       {STATIC && <LookupLinks address={address.trim()} asOf={macro?.asOf ?? null} />}
+      {data?.warnings?.length ? <details className="banner warn"><summary>{data.warnings.length} data note{data.warnings.length > 1 ? "s" : ""}</summary>{data.warnings.map((w, i) => <div key={i}>{w}</div>)}</details> : null}
 
-      {data?.warnings?.length ? (
-        <div className="banner warn">{data.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}</div>
-      ) : null}
-
-      {/* ---------- Structure comparison ---------- */}
-      <section className="structures">
-        {offers.map(({ s, price, capped }) => {
-          const r = underwrite(s.id, deal, termsBy[s.id], deal.price, true);
-          return (
-            <button key={s.id} className={`struct ${s.id === structure ? "active" : ""}`} onClick={() => setStructure(s.id)} title={s.blurb}>
-              <div className="struct-name">{s.short}{s.creative && <span className="tag">creative</span>}</div>
-              <div className="struct-max">{price === null ? "—" : `${money(price / 1000)}k${capped ? "+" : ""}`}</div>
-              <div className="struct-sub">max offer</div>
-              <div className={`struct-cf ${r.cashFlow >= targetCF ? "good" : r.cashFlow >= 0 ? "ok" : "bad"}`}>{money(r.cashFlow)}/mo @ your price</div>
-            </button>
-          );
-        })}
-      </section>
+      {/* ---------- Structures ---------- */}
+      <nav className="struct-tabs" aria-label="Financing structure">
+        {offers.map(({ s, price, capped }) => (
+          <button key={s.id} className={s.id === structure ? "active" : ""} onClick={() => setStructure(s.id)} title={s.blurb}>
+            <span className="st-name">{s.short}{s.creative && <i>creative</i>}</span>
+            <span className="st-price">{price === null ? "—" : `${money(price / 1000)}k${capped ? "+" : ""}`}</span>
+          </button>
+        ))}
+      </nav>
 
       <main className="grid">
-        {/* ---------- Inputs ---------- */}
-        <aside className="inputs">
-          <Group title="Your targets">
-            <Slider label="Min cash flow / door / mo" unit="$" value={targets.minCashFlow} min={0} max={1000} step={25} onChange={setTg("minCashFlow")} hint="After ALL expenses and reserves" />
-            <Toggle label={`Require DSCR ≥ ${targets.minDscr}`} value={targets.useDscr} onChange={setTg("useDscr")} />
-            {targets.useDscr && <Slider label="Min DSCR" unit="x" value={targets.minDscr} min={1} max={2} step={0.05} onChange={setTg("minDscr")} />}
-            <Toggle label={`Require cash-on-cash ≥ ${targets.minCoc}%`} value={targets.useCoc} onChange={setTg("useCoc")} />
-            {targets.useCoc && <Slider label="Min cash-on-cash" unit="%" value={targets.minCoc} min={0} max={25} step={0.5} onChange={setTg("minCoc")} />}
-            <Toggle label={`Cash-on-cash must beat inflation (${deal.inflationPct}%)`} value={targets.beatInflation} onChange={setTg("beatInflation")} hint="Your cash flow has to at least keep pace with CPI, or the money you put in is losing buying power." />
-            <div className="field">
-              <label htmlFor="hurdle">All-cash hurdle</label>
-              <select id="hurdle" value={targets.cashHurdle} onChange={(e) => setTargets((t) => ({ ...t, cashHurdle: e.target.value as Targets["cashHurdle"] }))}>
-                <option value="inflation">Beat inflation ({deal.inflationPct}%)</option>
-                <option value="fed">Beat the Fed rate ({deal.riskFreePct}%)</option>
-                <option value="fedPlus">Fed rate + premium ({(deal.riskFreePct + targets.cashPremiumPct).toFixed(2)}%)</option>
-              </select>
-            </div>
-            {targets.cashHurdle === "fedPlus" && <Slider label="Risk premium over Fed rate" unit="%" value={targets.cashPremiumPct} min={0} max={8} step={0.25} onChange={setTg("cashPremiumPct")} hint="Extra yield you want for taking on tenants, repairs and illiquidity instead of holding T-bills" />}
-            {structure === "brrrr" && <Slider label="Max cash left in deal" unit="$" value={targets.maxCashLeft} min={0} max={100000} step={1000} onChange={setTg("maxCashLeft")} />}
-          </Group>
+        {/* ---------- Assumptions ---------- */}
+        <aside className="inputs card">
+          <div className="asm-head">
+            <h3>Assumptions</h3>
+            <span className="legend"><span className="chip chip-ai">AI</span> source · <span className="chip chip-edited">You</span> changed</span>
+          </div>
 
-          <Group title="Purchase">
-            <Slider label="Purchase price" unit="$" value={deal.price} min={Math.round(ref * 0.4)} max={Math.round(ref * 1.4)} step={1000} onChange={setD("price")} marker={current.price && !current.capped ? { value: current.price, label: "Max offer" } : undefined} />
-            <Slider label="As-is value (AVM)" unit="$" value={deal.marketValue} min={Math.round(ref * 0.5)} max={Math.round(ref * 1.5)} step={1000} onChange={setD("marketValue")} />
-            <Slider label="Rehab budget" unit="$" value={deal.rehab} min={0} max={Math.max(150000, ref * 0.4)} step={1000} onChange={setD("rehab")} />
-            {(deal.rehab > 0 || structure === "brrrr") && <Slider label="ARV" unit="$" value={deal.arv} min={Math.round(ref * 0.6)} max={Math.round(ref * 1.8)} step={1000} onChange={setD("arv")} />}
-            <Slider label="Closing costs" unit="%" value={deal.closingCostPct} min={0} max={6} step={0.25} onChange={setD("closingCostPct")} />
-            <Slider label="Units" unit="units" value={deal.units} min={1} max={20} onChange={setD("units")} />
-          </Group>
+          <AsmGroup title="Price">
+            {dRow("price", "Purchase price", "$", Math.round(ref * 0.4), Math.round(ref * 1.4), 1000, undefined, "Your offer. Everything else follows from it.", {
+              marker: current.price && !current.capped ? { value: current.price, label: "Max offer" } : undefined,
+              extra: current.price !== null && !current.capped ? <button className="link" onClick={() => setD("price")(current.price!)}>Set to max offer ({money(current.price)})</button> : undefined,
+            })}
+            {dRow("marketValue", "As-is value", "$", Math.round(ref * 0.5), Math.round(ref * 1.5), 1000, data?.value ? "AVM" : "Estimate", data?.value?.source)}
+            {dRow("rehab", "Rehab budget", "$", 0, Math.max(150000, ref * 0.4), 1000, "None assumed")}
+            {(deal.rehab > 0 || structure === "brrrr") && dRow("arv", "After-repair value", "$", Math.round(ref * 0.6), Math.round(ref * 1.8), 1000, "= value")}
+          </AsmGroup>
 
-          {offRec.length > 0 && (
-            <button className="rec-all" onClick={useAllRecs}>
-              Use all recommended values ({offRec.length} differ)
-            </button>
-          )}
+          <AsmGroup title="Income">
+            {dRow("rent", "Rent / mo (all units)", "$", 0, Math.max(6000, deal.rent * 2), 25, rentSource, recs.rent?.why, { marker: data?.rent && compResult.recommended ? { value: data.rent.perUnit * deal.units, label: "Rent AVM" } : undefined })}
+            {dRow("vacancyPct", "Vacancy & credit loss", "%", 0, 25, 0.5, recSource("vacancyPct", "Ken's rule"), recs.vacancyPct?.why)}
+            {dRow("otherIncome", "Other income / mo", "$", 0, 1000, 10, "None assumed")}
+          </AsmGroup>
 
-          <Group title="Income">
-            <Slider label="Gross rent (all units) / mo" unit="$" value={deal.rent} min={0} max={Math.max(6000, deal.rent * 2)} step={25} onChange={setD("rent")} marker={data?.rent && compResult.recommended ? { value: data.rent.perUnit * deal.units, label: "Rent AVM" } : undefined} rec={recs.rent} />
-            <Slider label="Other income / mo" unit="$" value={deal.otherIncome} min={0} max={1000} step={10} onChange={setD("otherIncome")} />
-            <Slider label="Vacancy & credit loss" unit="%" value={deal.vacancyPct} min={0} max={25} step={0.5} onChange={setD("vacancyPct")} hint="Ken: never underwrite less than 5%, even if it's 100% full today" rec={recs.vacancyPct} />
-          </Group>
+          <AsmGroup title="Expenses">
+            {dRow("taxRatePct", "Property tax rate", "%", 0, 4, 0.01, taxSource, recs.taxRatePct?.why)}
+            <AssumptionToggle id="reassess" label="Reassess taxes at my price" value={deal.reassessTaxes} ai={aiFull.reassessTaxes} onChange={setD("reassessTaxes")} onReset={resetD("reassessTaxes")} source="Ken's rule" open={false} onToggle={toggleRow} />
+            {!deal.reassessTaxes && dRow("taxesAnnualActual", "Current tax bill / yr", "$", 0, 30000, 50, data?.taxes.annualActual ? "Tax bill" : "Estimate")}
+            {dRow("insuranceAnnual", "Insurance / yr", "$", 0, 15000, 50, recSource("insuranceAnnual", propState ? `${propState} avg` : "Estimate"), recs.insuranceAnnual?.why)}
+            {dRow("mgmtPct", "Property management", "%", 0, 15, 0.5, "PM rates", recs.mgmtPct?.why)}
+            {dRow("repairsPct", "Repairs & maintenance", "%", 0, 20, 0.5, "Building age", recs.repairsPct?.why)}
+            {dRow("capexPct", "CapEx reserves", "%", 0, 20, 0.5, "Building age", recs.capexPct?.why)}
+            {dRow("hoaMonthly", "HOA / mo", "$", 0, 1000, 5, data ? "Property record" : "None assumed")}
+            {dRow("utilitiesMonthly", "Owner-paid utilities / mo", "$", 0, 2000, 10, "Tenant pays")}
+            {dRow("otherExpMonthly", "Other (lawn, pest) / mo", "$", 0, 1000, 5, "None assumed")}
+          </AsmGroup>
 
-          <Group title="Expenses">
-            <Slider label="Property tax rate" unit="%" value={deal.taxRatePct} min={0} max={4} step={0.01} onChange={setD("taxRatePct")} rec={recs.taxRatePct} />
-            <Toggle label="Reassess taxes at my purchase price" value={deal.reassessTaxes} onChange={setD("reassessTaxes")} hint="Ken's rule: the county re-assesses after a sale. Underwrite YOUR tax bill, not the seller's." />
-            {!deal.reassessTaxes && <Slider label="Current tax bill / yr" unit="$" value={deal.taxesAnnualActual} min={0} max={30000} step={50} onChange={setD("taxesAnnualActual")} />}
-            <Slider label="Insurance / yr" unit="$" value={deal.insuranceAnnual} min={0} max={15000} step={50} onChange={setD("insuranceAnnual")} rec={recs.insuranceAnnual} />
-            <Slider label="Property management" unit="%" value={deal.mgmtPct} min={0} max={15} step={0.5} onChange={setD("mgmtPct")} rec={recs.mgmtPct} />
-            <Slider label="Repairs & maintenance" unit="%" value={deal.repairsPct} min={0} max={20} step={0.5} onChange={setD("repairsPct")} rec={recs.repairsPct} />
-            <Slider label="CapEx reserves" unit="%" value={deal.capexPct} min={0} max={20} step={0.5} onChange={setD("capexPct")} rec={recs.capexPct} />
-            <Slider label="HOA / mo" unit="$" value={deal.hoaMonthly} min={0} max={1000} step={5} onChange={setD("hoaMonthly")} />
-            <Slider label="Owner-paid utilities / mo" unit="$" value={deal.utilitiesMonthly} min={0} max={2000} step={10} onChange={setD("utilitiesMonthly")} />
-            <Slider label="Other (lawn, pest, admin) / mo" unit="$" value={deal.otherExpMonthly} min={0} max={1000} step={5} onChange={setD("otherExpMonthly")} />
-          </Group>
+          <AsmGroup title={`Loan · ${info.name}`} note={<span className="muted small">{info.blurb}</span>}>
+            {TERM_SPECS[structure].filter((f) => !f.show || f.show(terms)).map((f) =>
+              f.toggle ? (
+                <AssumptionToggle key={f.key} id={f.key} label={f.label} value={terms[f.key] as boolean} ai={aiTerms[structure][f.key] as boolean} onChange={setT(f.key)} onReset={resetT(f.key)} source={typeof f.source === "function" ? f.source(deal) : f.source} open={false} onToggle={toggleRow} />
+              ) : (
+                <Assumption
+                  key={f.key}
+                  id={`t-${f.key}`}
+                  label={f.label}
+                  value={terms[f.key] as number}
+                  ai={aiTerms[structure][f.key] as number}
+                  unit={f.unit!}
+                  min={f.min!}
+                  max={f.max!}
+                  step={f.step}
+                  source={typeof f.source === "function" ? f.source(deal) : f.source}
+                  why={typeof f.why === "function" ? f.why(deal, loanEst) : f.why}
+                  open={openRow === `t-${f.key}`}
+                  onToggle={toggleRow}
+                  onChange={setT(f.key)}
+                  onReset={resetT(f.key)}
+                />
+              ),
+            )}
+          </AsmGroup>
 
-          <Group title={`Financing — ${info.name}`}>
-            <p className="blurb">{info.blurb}</p>
-            <FinancingInputs id={structure} t={terms} set={setT} marketRate={deal.marketRatePct} />
-            <div className="rate-note">PMMS 30-yr today: {deal.marketRatePct}%{data?.rates.asOf ? ` (${data.rates.asOf})` : ""}</div>
-            <button className="link" onClick={() => setTermsBy((m) => ({ ...m, [structure]: defaultTerms(structure, deal.marketRatePct, deal.price) }))}>Reset {info.short} terms</button>
-          </Group>
+          <AsmGroup title="Your buy box" collapsed note={<span className="muted small">{money(targets.minCashFlow)}/door{targets.useDscr ? ` · DSCR ${targets.minDscr}` : ""}{targets.useCoc ? ` · CoC ${targets.minCoc}%` : ""}{targets.beatInflation ? " · beats inflation" : ""}</span>}>
+            <Assumption id="tg-cf" label="Min cash flow / door / mo" value={targets.minCashFlow} unit="$" min={0} max={1000} step={25} onChange={setTg("minCashFlow")} why="After every expense and reserve." open={openRow === "tg-cf"} onToggle={toggleRow} />
+            <AssumptionToggle id="tg-dscr" label={`Require DSCR ≥ ${targets.minDscr}`} value={targets.useDscr} onChange={setTg("useDscr")} open={false} onToggle={toggleRow} />
+            {targets.useDscr && <Assumption id="tg-dscrv" label="Min DSCR" value={targets.minDscr} unit="x" min={1} max={2} step={0.05} onChange={setTg("minDscr")} open={openRow === "tg-dscrv"} onToggle={toggleRow} />}
+            <AssumptionToggle id="tg-coc" label={`Require cash-on-cash ≥ ${targets.minCoc}%`} value={targets.useCoc} onChange={setTg("useCoc")} open={false} onToggle={toggleRow} />
+            {targets.useCoc && <Assumption id="tg-cocv" label="Min cash-on-cash" value={targets.minCoc} unit="%" min={0} max={25} step={0.5} onChange={setTg("minCoc")} open={openRow === "tg-cocv"} onToggle={toggleRow} />}
+            <AssumptionToggle id="tg-infl" label={`Beat inflation (${deal.inflationPct}%)`} value={targets.beatInflation} onChange={setTg("beatInflation")} open={false} onToggle={toggleRow} />
+            {structure === "brrrr" && <Assumption id="tg-left" label="Max cash left after refi" value={targets.maxCashLeft} unit="$" min={0} max={100000} step={1000} onChange={setTg("maxCashLeft")} open={openRow === "tg-left"} onToggle={toggleRow} />}
+          </AsmGroup>
 
-          <Group title="Inflation & Fed rate">
-            <Slider label="Inflation (CPI, YoY)" unit="%" value={deal.inflationPct} min={0} max={10} step={0.05} onChange={setD("inflationPct")} marker={macro?.inflation != null ? { value: macro.inflation, label: "Latest CPI" } : undefined} />
-            <Slider label="Fed funds rate" unit="%" value={deal.riskFreePct} min={0} max={8} step={0.05} onChange={setD("riskFreePct")} marker={macro?.fedFunds != null ? { value: macro.fedFunds, label: "Effective Fed funds" } : undefined} />
-            <div className="rate-note">{macro?.inflation != null ? `Live from FRED: CPI ${macro.inflation}% (${macro.inflationAsOf?.slice(0, 7)}), Fed funds ${macro.fedFunds}% (${macro.fedFundsAsOf})` : "Couldn't load live FRED data, so these are defaults."}</div>
-          </Group>
-
-          <Group title="Growth & exit" collapsed>
-            <Slider label="Rent growth / yr" unit="%" value={deal.rentGrowthPct} min={-3} max={8} step={0.25} onChange={setD("rentGrowthPct")} />
-            <Slider label="Expense growth / yr" unit="%" value={deal.expenseGrowthPct} min={0} max={8} step={0.25} onChange={setD("expenseGrowthPct")} />
-            <Slider label="Appreciation / yr" unit="%" value={deal.appreciationPct} min={-3} max={8} step={0.25} onChange={setD("appreciationPct")} />
-            <Slider label="Hold period" unit="yrs" value={deal.holdYears} min={1} max={30} onChange={setD("holdYears")} />
-            <Slider label="Selling costs" unit="%" value={deal.sellingCostPct} min={0} max={10} step={0.5} onChange={setD("sellingCostPct")} />
-          </Group>
+          <AsmGroup title="Market & exit" collapsed>
+            {dRow("inflationPct", "Inflation (CPI)", "%", 0, 10, 0.05, macro?.inflation != null ? "FRED" : "Default", macro?.inflationAsOf ? `CPI year over year, ${macro.inflationAsOf.slice(0, 7)}` : undefined)}
+            {dRow("riskFreePct", "Fed funds rate", "%", 0, 8, 0.05, macro?.fedFunds != null ? "FRED" : "Default", macro?.fedFundsAsOf ? `Effective Fed funds, ${macro.fedFundsAsOf}` : undefined)}
+            {dRow("closingCostPct", "Closing costs", "%", 0, 6, 0.25, "Typical")}
+            {dRow("rentGrowthPct", "Rent growth / yr", "%", -3, 8, 0.25, "Long-run avg")}
+            {dRow("expenseGrowthPct", "Expense growth / yr", "%", 0, 8, 0.25, "Long-run avg")}
+            {dRow("appreciationPct", "Appreciation / yr", "%", -3, 8, 0.25, "Long-run avg")}
+            {dRow("holdYears", "Hold period", "yrs", 1, 30, 1, "Default")}
+            {dRow("sellingCostPct", "Selling costs", "%", 0, 10, 0.5, "Typical")}
+            {dRow("units", "Units", "units", 1, 20, 1, data ? "Property record" : "Default")}
+          </AsmGroup>
         </aside>
 
         {/* ---------- Results ---------- */}
         <section className="results">
           <div className="kpis">
-            <Kpi label="Cash flow / mo" value={`${money(result.cashFlow)}`} tone={result.cashFlow >= targetCF ? "good" : result.cashFlow >= 0 ? "ok" : "bad"} sub={`${money(result.cashFlow * 12)}/yr · ${money(result.cashFlow / deal.units)}/door`} />
-            <Kpi label="Cash-on-cash" value={Number.isFinite(result.coc) ? `${result.coc.toFixed(1)}%` : "∞"} tone={result.coc >= Math.max(8, reqCoc) ? "good" : result.coc >= deal.inflationPct ? "ok" : "bad"} sub={`on ${money(result.cashInvested)} · real ${Number.isFinite(result.coc) ? (result.coc - deal.inflationPct).toFixed(1) + "%" : "∞"}`} />
-            <Kpi label="Cap rate" value={`${result.capRate.toFixed(2)}%`} sub={`NOI ${money(result.noi * 12)}/yr`} />
-            <Kpi label="DSCR" value={Number.isFinite(result.dscr) ? `${result.dscr.toFixed(2)}×` : "n/a"} tone={result.dscr >= 1.25 ? "good" : result.dscr >= 1 ? "ok" : "bad"} sub={`Debt ${money(result.debtService)}/mo`} />
-            <Kpi label="Cash to close" value={`${money(result.financing.cashToClose)}`} sub={result.financing.cashLeftInDeal !== undefined ? `${money(result.financing.cashLeftInDeal)} left after refi` : `incl. closing & rehab`} />
-            <Kpi label={`${deal.holdYears}-yr IRR`} value={Number.isFinite(result.irr) ? `${result.irr.toFixed(1)}%` : "∞"} sub={`${Number.isFinite(result.irr) ? `real ${(((1 + result.irr / 100) / (1 + deal.inflationPct / 100) - 1) * 100).toFixed(1)}% · ` : ""}${Number.isFinite(result.equityMultiple) ? result.equityMultiple.toFixed(2) + "× equity" : "no cash in"} · ${money(result.totalProfit)} profit`} />
+            <Kpi label="Cash flow / mo" value={money(result.cashFlow)} tone={result.cashFlow >= targetCF ? "good" : result.cashFlow >= 0 ? "ok" : "bad"} sub={`at ${money(deal.price)} · target ${money(targetCF)}`} />
+            <Kpi label="Cash-on-cash" value={Number.isFinite(result.coc) ? `${result.coc.toFixed(1)}%` : "∞"} tone={result.coc >= 8 ? "good" : result.coc >= deal.inflationPct ? "ok" : "bad"} sub={`real ${Number.isFinite(result.coc) ? (result.coc - deal.inflationPct).toFixed(1) + "%" : "∞"} after inflation`} />
+            <Kpi label="DSCR" value={Number.isFinite(result.dscr) ? `${result.dscr.toFixed(2)}×` : "n/a"} tone={result.dscr >= 1.25 ? "good" : result.dscr >= 1 ? "ok" : "bad"} sub={`cap rate ${result.capRate.toFixed(2)}%`} />
+            <Kpi label="Cash to close" value={money(result.financing.cashToClose)} sub={result.financing.cashLeftInDeal !== undefined ? `${money(result.financing.cashLeftInDeal)} left after refi` : "incl. closing & rehab"} />
           </div>
 
           <div className="card">
-            <h3>Cash flow vs. purchase price</h3>
+            <h3>Cash flow vs. price</h3>
             <PriceCurve id={structure} deal={deal} terms={terms} target={targetCF} maxOffer={current.capped ? null : current.price} />
           </div>
 
-          <div className="two-col">
-            <div className="card">
-              <h3>McElroy discipline check <span className="muted">— grade {score.grade}</span></h3>
-              <ul className="checks">
-                {score.checks.map((c) => (
-                  <li key={c.label} className={c.pass ? "pass" : "fail"}>
-                    <span className="mark">{c.pass ? "✓" : "✕"}</span>
-                    <div>
-                      <div>{c.label}</div>
-                      <div className="muted small">{c.detail}</div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <div className="muted small">Quick rules: 1% rule {result.onePct.toFixed(2)}% · GRM {result.grm.toFixed(1)} · expense ratio {result.expenseRatio.toFixed(0)}% (50% rule ≈ 50%)</div>
+          <div className="card tab-card">
+            <div className="tabs" role="tablist">
+              {([
+                ["checks", `Checks ${score.checks.filter((c) => c.pass).length}/${score.checks.length}`],
+                ["comps", `Rent comps${compResult.used ? ` (${compResult.used})` : ""}`],
+                ["proforma", "Pro forma"],
+                ["loans", "Loans"],
+                ["projection", `${deal.holdYears}-yr return`],
+                ["sensitivity", "Sensitivity"],
+                ["fed", "vs. Fed rate"],
+                ["sources", "Sources"],
+              ] as [Tab, string][]).map(([id, label]) => (
+                <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{label}</button>
+              ))}
             </div>
-
-            <div className="card">
-              <h3>Capital stack</h3>
-              <table className="plain">
-                <thead><tr><th>Source</th><th>Amount</th><th>Rate</th><th>Pmt/mo</th></tr></thead>
-                <tbody>
-                  {result.financing.loans.map((l) => (
-                    <tr key={l.name}>
-                      <td>{l.lien} · {l.name}{l.balloonMonths ? <div className="muted small">balloon yr {l.balloonMonths / 12}</div> : null}{l.ioMonths ? <div className="muted small">IO {Math.round(l.ioMonths / 12)} yrs</div> : null}</td>
-                      <td>{money(l.principal)}</td>
-                      <td>{l.ratePct}%</td>
-                      <td>{money(initialPayment(l))}</td>
-                    </tr>
-                  ))}
-                  <tr className="total"><td>Your cash in</td><td>{money(result.financing.cashToClose)}</td><td></td><td></td></tr>
-                </tbody>
-              </table>
-              <ul className="notes">{result.financing.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+            <div className="tab-body">
+              {tab === "checks" && <Checks score={score} result={result} />}
+              {tab === "comps" && (
+                <RentCompsPanel result={compResult} subject={subject} setSubject={setSubject} comps={comps} setComps={setComps} units={deal.units} currentRent={deal.rent} onUse={(v) => setD("rent")(v)} hosted={STATIC} />
+              )}
+              {tab === "proforma" && <ProForma result={result} deal={deal} />}
+              {tab === "loans" && <Loans result={result} />}
+              {tab === "projection" && <Projection result={result} deal={deal} />}
+              {tab === "sensitivity" && (
+                <>
+                  <Sensitivity id={structure} deal={deal} terms={terms} target={targetCF} />
+                  <p className="muted small">Stress test (rent −5%, vacancy +5 pts, expenses +10%): {money(result.stress.cashFlow)}/mo, DSCR {Number.isFinite(result.stress.dscr) ? result.stress.dscr.toFixed(2) : "n/a"}.</p>
+                </>
+              )}
+              {tab === "fed" && <OpportunityPanel result={result} deal={deal} tbill={macro?.tbill3m ?? null} asOf={{ fed: macro?.fedFundsAsOf ?? null, cpi: macro?.inflationAsOf ?? null }} />}
+              {tab === "sources" && <CompsPanel data={data} />}
             </div>
-          </div>
-
-          <RentCompsPanel
-            result={compResult}
-            subject={subject}
-            setSubject={setSubject}
-            comps={comps}
-            setComps={setComps}
-            units={deal.units}
-            currentRent={deal.rent}
-            onUse={(v) => setDeal((d) => ({ ...d, rent: v }))}
-            hosted={STATIC}
-          />
-
-          <OpportunityPanel
-            result={result}
-            deal={deal}
-            cashTerms={termsBy.cash}
-            targets={targets}
-            tbill={macro?.tbill3m ?? null}
-            asOf={{ fed: macro?.fedFundsAsOf ?? null, cpi: macro?.inflationAsOf ?? null }}
-            onSetPrice={(p) => { setStructure("cash"); setDeal((d) => ({ ...d, price: p })); }}
-          />
-
-          <div className="card">
-            <div className="tabs">
-              <button className={tab === "proforma" ? "active" : ""} onClick={() => setTab("proforma")}>Pro forma</button>
-              <button className={tab === "projection" ? "active" : ""} onClick={() => setTab("projection")}>{deal.holdYears}-yr projection</button>
-              <button className={tab === "comps" ? "active" : ""} onClick={() => setTab("comps")}>Comps & sources</button>
-            </div>
-            {tab === "proforma" && (
-              <table className="plain proforma">
-                <thead><tr><th></th><th>Monthly</th><th>Annual</th><th>% EGI</th></tr></thead>
-                <tbody>
-                  <Row label="Gross scheduled rent" m={deal.rent} egi={result.egi} />
-                  {deal.otherIncome > 0 && <Row label="Other income" m={deal.otherIncome} egi={result.egi} />}
-                  <Row label={`Vacancy & credit loss (${deal.vacancyPct}%)`} m={result.egi - result.gsi} egi={result.egi} />
-                  <Row label="Effective gross income" m={result.egi} egi={result.egi} bold />
-                  {result.opexLines.filter((l) => l.monthly > 0).map((l) => <Row key={l.label} label={l.label} m={-l.monthly} egi={result.egi} />)}
-                  <Row label="Total operating expenses" m={-result.opex} egi={result.egi} bold />
-                  <Row label="Net operating income" m={result.noi} egi={result.egi} bold />
-                  <Row label="Debt service" m={-result.debtService} egi={result.egi} />
-                  <Row label="Cash flow" m={result.cashFlow} egi={result.egi} bold />
-                </tbody>
-              </table>
-            )}
-            {tab === "projection" && (
-              <div className="table-scroll">
-                <table className="plain">
-                  <thead><tr><th>Year</th><th>NOI</th><th>Debt service</th><th>Cash flow</th><th>Loan bal.</th><th>Value</th><th>Equity</th></tr></thead>
-                  <tbody>
-                    {result.projection.map((y) => (
-                      <tr key={y.year}><td>{y.year}</td><td>{money(y.noi)}</td><td>{money(y.debtService)}</td><td className={y.cashFlow >= 0 ? "" : "neg"}>{money(y.cashFlow)}</td><td>{money(y.loanBalance)}</td><td>{money(y.value)}</td><td>{money(y.equity)}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {tab === "comps" && <CompsPanel data={data} />}
-          </div>
-
-          <div className="card">
-            <h3>Sensitivity — monthly cash flow</h3>
-            <Sensitivity id={structure} deal={deal} terms={terms} target={targetCF} />
-            <div className="muted small">Stress test (rent −5%, vacancy +5 pts, expenses +10%): {money(result.stress.cashFlow)}/mo, DSCR {Number.isFinite(result.stress.dscr) ? result.stress.dscr.toFixed(2) : "n/a"}</div>
           </div>
         </section>
       </main>
       <footer className="muted small">
-        Estimates only — AVMs, area averages and insurance figures are starting points. Verify rent with local PMs, taxes with the assessor, insurance with a quote, and the existing loan with the seller's mortgage statement before you offer.
+        Estimates only. Before you offer, verify rent with local property managers, taxes with the assessor, insurance with a quote, and any existing loan with the seller's mortgage statement.
       </footer>
     </div>
   );
 }
 
+/** One or two plain sentences: what the deal does at your price and the biggest thing to know. */
+function verdict(r: Result, max: number | null, value: number, tg: Targets, d: Deal, score: ReturnType<typeof scorecard>, name: string): string {
+  const parts: string[] = [];
+  const tgt = tg.minCashFlow * d.units;
+  parts.push(`At ${money(r.price)} this cash flows ${money(r.cashFlow)}/mo after reserves${r.cashFlow >= tgt ? `, clearing your ${money(tgt)} target` : `, short of your ${money(tgt)} target`}.`);
+  if (max !== null && value > 0) {
+    const pct = (max / value) * 100;
+    parts.push(pct >= 100 ? `It works up to ${pct.toFixed(0)}% of value with a ${name.toLowerCase()}.` : `To hit your numbers, offer ${(100 - pct).toFixed(0)}% under value.`);
+  }
+  const worst = score.checks.filter((c) => !c.pass).sort((a, b) => b.weight - a.weight)[0];
+  parts.push(worst ? `Biggest issue: ${issue(worst.label, r, d)}.` : "Passes every McElroy check.");
+  return parts.join(" ");
+}
 
-function FinancingInputs({ id, t, set, marketRate }: { id: StructureId; t: Terms; set: (k: keyof Terms) => (v: number | boolean) => void; marketRate: number }) {
-  const rate = (label = "Interest rate", k: keyof Terms = "ratePct") => <Slider label={label} unit="%" value={t[k] as number} min={0} max={14} step={0.125} onChange={set(k)} marker={{ value: marketRate, label: "PMMS" }} />;
-  const sellerNote = (
+function issue(label: string, r: Result, d: Deal): string {
+  const x = (n: number, digits = 1) => (Number.isFinite(n) ? n.toFixed(digits) : "∞");
+  const map: Record<string, string> = {
+    "DSCR ≥ 1.25": `rent covers the loan payment only ${x(r.dscr, 2)}× (lenders want 1.25×)`,
+    "Positive cash flow after reserves": "it loses money every month once reserves are set aside",
+    "Survives stress test": "a small dip in rent or occupancy turns cash flow negative",
+    "Break-even occupancy ≤ 85%": `it has to be ${x(r.breakEvenOcc)}% occupied just to break even`,
+    "Beats inflation": `your cash return (${x(r.coc)}%) doesn't keep up with ${d.inflationPct}% inflation`,
+    "Beats the Fed rate": `the same cash at the Fed rate would earn more (${d.riskFreePct}%)`,
+    "Cash-on-cash ≥ 8%": `cash-on-cash is only ${x(r.coc)}%`,
+    "Positive leverage": `the loan costs ${x(r.loanConstant, 2)}% a year but the property only yields ${x(r.capRate, 2)}%`,
+    "Realistic expense ratio (≥ 35%)": `expenses are only ${x(r.expenseRatio, 0)}% of income, which is usually too optimistic`,
+    "Vacancy underwritten ≥ 5%": "vacancy is set below 5%",
+    "Management budgeted ≥ 8%": "management is budgeted under 8%",
+    "CapEx reserves ≥ $300/door/yr": "CapEx reserves are under $300 per door a year",
+  };
+  return map[label] ?? label;
+}
+
+function Checks({ score, result }: { score: ReturnType<typeof scorecard>; result: Result }) {
+  return (
     <>
-      <Slider label="Seller note rate" unit="%" value={t.sellerRatePct} min={0} max={10} step={0.25} onChange={set("sellerRatePct")} />
-      <Toggle label="Interest-only seller note" value={t.sellerIO} onChange={set("sellerIO")} />
-      {!t.sellerIO && <Slider label="Seller note amortization" unit="yrs" value={t.sellerAmortYears} min={5} max={40} onChange={set("sellerAmortYears")} />}
-      <Slider label="Balloon (0 = none)" unit="yrs" value={t.balloonYears} min={0} max={30} onChange={set("balloonYears")} hint="At the balloon, the model refinances the remaining balance at market + 0.75%" />
+      <ul className="checks">
+        {score.checks.map((c) => (
+          <li key={c.label} className={c.pass ? "pass" : "fail"}>
+            <span className="mark">{c.pass ? "✓" : "✕"}</span>
+            <div>
+              <div>{c.label}</div>
+              <div className="muted small">{c.detail}</div>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="muted small">Quick rules: 1% rule {result.onePct.toFixed(2)}% · GRM {result.grm.toFixed(1)} · expense ratio {result.expenseRatio.toFixed(0)}%</p>
     </>
   );
-  switch (id) {
-    case "cash":
-      return <p className="muted small">No financing inputs.</p>;
-    case "conventional":
-    case "dscr":
-      return (
-        <>
-          <Slider label="Down payment" unit="%" value={t.downPct} min={0} max={50} step={0.5} onChange={set("downPct")} />
-          {rate()}
-          <Slider label="Amortization" unit="yrs" value={t.amortYears} min={10} max={40} step={5} onChange={set("amortYears")} />
-          <Slider label="Points" unit="%" value={t.pointsPct} min={0} max={4} step={0.25} onChange={set("pointsPct")} />
-          {id === "dscr" && <Slider label="Interest-only period" unit="yrs" value={t.ioYears} min={0} max={10} onChange={set("ioYears")} />}
-        </>
-      );
-    case "fha":
-      return (
-        <>
-          <Slider label="Down payment" unit="%" value={t.downPct} min={3.5} max={20} step={0.5} onChange={set("downPct")} />
-          {rate()}
-          <Slider label="Annual MIP" unit="%" value={t.mipPct} min={0} max={1} step={0.05} onChange={set("mipPct")} />
-        </>
-      );
-    case "subto":
-    case "hybrid":
-      return (
-        <>
-          <Slider label="Existing loan balance" unit="$" value={t.existingBalance} min={0} max={1500000} step={1000} onChange={set("existingBalance")} hint="Estimated from last sale if available — get the mortgage statement" />
-          <Slider label="Existing rate" unit="%" value={t.existingRatePct} min={0} max={10} step={0.125} onChange={set("existingRatePct")} />
-          <Slider label="Years left on loan" unit="yrs" value={t.existingYearsLeft} min={1} max={30} onChange={set("existingYearsLeft")} />
-          <Slider label="Arrears / reinstatement" unit="$" value={t.arrears} min={0} max={50000} step={250} onChange={set("arrears")} />
-          <Slider label="Seller equity carried as note" unit="%" value={t.sellerCarryPct} min={0} max={100} step={5} onChange={set("sellerCarryPct")} />
-          {t.sellerCarryPct > 0 && sellerNote}
-        </>
-      );
-    case "sellerFinance":
-      return (
-        <>
-          <Slider label="Down payment to seller" unit="%" value={t.downPct} min={0} max={40} step={0.5} onChange={set("downPct")} />
-          {sellerNote}
-        </>
-      );
-    case "morby":
-      return (
-        <>
-          <Slider label="Bank / DSCR loan (LTV)" unit="%" value={t.bankLtvPct} min={50} max={90} step={0.5} onChange={set("bankLtvPct")} />
-          {rate("Bank rate")}
-          <Slider label="Bank amortization" unit="yrs" value={t.amortYears} min={15} max={40} step={5} onChange={set("amortYears")} />
-          <Slider label="Bank points" unit="%" value={t.pointsPct} min={0} max={4} step={0.25} onChange={set("pointsPct")} />
-          <Slider label="Seller carry 2nd (% of price)" unit="%" value={t.morbyCarryPct} min={0} max={50} step={0.5} onChange={set("morbyCarryPct")} />
-          {sellerNote}
-        </>
-      );
-    case "brrrr":
-      return (
-        <>
-          <Slider label="Hard money (% of price + rehab)" unit="%" value={t.hmLtcPct} min={0} max={100} step={1} onChange={set("hmLtcPct")} />
-          {rate("Hard money rate", "hmRatePct")}
-          <Slider label="Hard money points" unit="%" value={t.hmPointsPct} min={0} max={5} step={0.25} onChange={set("hmPointsPct")} />
-          <Slider label="Rehab + season months" unit="mo" value={t.rehabMonths} min={1} max={18} onChange={set("rehabMonths")} />
-          <Slider label="Refi LTV (of ARV)" unit="%" value={t.refiLtvPct} min={50} max={80} step={0.5} onChange={set("refiLtvPct")} />
-          {rate("Refi rate", "refiRatePct")}
-        </>
-      );
-  }
 }
 
-function Group({ title, children, collapsed }: { title: string; children: React.ReactNode; collapsed?: boolean }) {
+function ProForma({ result, deal }: { result: Result; deal: Deal }) {
   return (
-    <details className="group card" open={!collapsed}>
-      <summary>{title}</summary>
-      <div className="group-body">{children}</div>
-    </details>
+    <table className="plain proforma">
+      <thead><tr><th></th><th>Monthly</th><th>Annual</th><th>% EGI</th></tr></thead>
+      <tbody>
+        <Row label="Gross scheduled rent" m={deal.rent} egi={result.egi} />
+        {deal.otherIncome > 0 && <Row label="Other income" m={deal.otherIncome} egi={result.egi} />}
+        <Row label={`Vacancy & credit loss (${deal.vacancyPct}%)`} m={result.egi - result.gsi} egi={result.egi} />
+        <Row label="Effective gross income" m={result.egi} egi={result.egi} bold />
+        {result.opexLines.filter((l) => l.monthly > 0).map((l) => <Row key={l.label} label={l.label} m={-l.monthly} egi={result.egi} />)}
+        <Row label="Total operating expenses" m={-result.opex} egi={result.egi} bold />
+        <Row label="Net operating income" m={result.noi} egi={result.egi} bold />
+        <Row label="Debt service" m={-result.debtService} egi={result.egi} />
+        <Row label="Cash flow" m={result.cashFlow} egi={result.egi} bold />
+      </tbody>
+    </table>
   );
 }
+
+function Loans({ result }: { result: Result }) {
+  return (
+    <>
+      <table className="plain">
+        <thead><tr><th>Source</th><th>Amount</th><th>Rate</th><th>Pmt/mo</th></tr></thead>
+        <tbody>
+          {result.financing.loans.map((l) => (
+            <tr key={l.name}>
+              <td>{l.lien} · {l.name}{l.balloonMonths ? <div className="muted small">balloon yr {l.balloonMonths / 12}</div> : null}{l.ioMonths ? <div className="muted small">interest-only {Math.round(l.ioMonths / 12)} yrs</div> : null}</td>
+              <td>{money(l.principal)}</td>
+              <td>{l.ratePct}%</td>
+              <td>{money(initialPayment(l))}</td>
+            </tr>
+          ))}
+          <tr className="total"><td>Your cash in</td><td>{money(result.financing.cashToClose)}</td><td></td><td></td></tr>
+        </tbody>
+      </table>
+      <ul className="notes">{result.financing.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+    </>
+  );
+}
+
+function Projection({ result, deal }: { result: Result; deal: Deal }) {
+  const realIrr = Number.isFinite(result.irr) ? ((1 + result.irr / 100) / (1 + deal.inflationPct / 100) - 1) * 100 : NaN;
+  return (
+    <>
+      <p className="proj-sum">
+        <b>{Number.isFinite(result.irr) ? `${result.irr.toFixed(1)}%` : "∞"}</b> a year over {deal.holdYears} years
+        {Number.isFinite(realIrr) ? ` (${realIrr.toFixed(1)}% after inflation)` : ""} · {Number.isFinite(result.equityMultiple) ? `${result.equityMultiple.toFixed(2)}× your money` : "no cash left in"} · {money(result.totalProfit)} profit
+      </p>
+      <div className="table-scroll">
+        <table className="plain">
+          <thead><tr><th>Year</th><th>NOI</th><th>Debt service</th><th>Cash flow</th><th>Loan bal.</th><th>Value</th><th>Equity</th></tr></thead>
+          <tbody>
+            {result.projection.map((y) => (
+              <tr key={y.year}><td>{y.year}</td><td>{money(y.noi)}</td><td>{money(y.debtService)}</td><td className={y.cashFlow >= 0 ? "" : "neg"}>{money(y.cashFlow)}</td><td>{money(y.loanBalance)}</td><td>{money(y.value)}</td><td>{money(y.equity)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ---------- Loan term rows per structure ----------
+interface TermSpec {
+  key: keyof Terms;
+  label: string;
+  unit?: Unit;
+  min?: number;
+  max?: number;
+  step?: number;
+  toggle?: boolean;
+  source?: string | ((d: Deal) => string);
+  why?: string | ((d: Deal, est: LoanEst) => string);
+  show?: (t: Terms) => boolean;
+}
+const rateRow = (label: string, key: keyof Terms, spread: number): TermSpec => ({
+  key, label, unit: "%", min: 0, max: 14, step: 0.125,
+  source: spread ? `PMMS +${spread}` : "PMMS",
+  why: (d) => `Freddie Mac 30-yr average ${d.marketRatePct}%${spread ? ` plus a typical ${spread}% for this loan type` : ""}. Get a real quote.`,
+});
+const sellerNote: TermSpec[] = [
+  { key: "sellerRatePct", label: "Seller note rate", unit: "%", min: 0, max: 10, step: 0.25, source: "Typical ask" },
+  { key: "sellerIO", label: "Interest-only seller note", toggle: true, source: "Typical" },
+  { key: "sellerAmortYears", label: "Seller note amortization", unit: "yrs", min: 5, max: 40, step: 1, source: "Typical", show: (t) => !t.sellerIO },
+  { key: "balloonYears", label: "Balloon (0 = none)", unit: "yrs", min: 0, max: 30, step: 1, source: "Typical", why: "At the balloon the model refinances what's left at market + 0.75%." },
+];
+const TERM_SPECS: Record<StructureId, TermSpec[]> = {
+  cash: [],
+  conventional: [
+    { key: "downPct", label: "Down payment", unit: "%", min: 0, max: 50, step: 0.5, source: "Investor min" },
+    rateRow("Interest rate", "ratePct", 0.75),
+    { key: "amortYears", label: "Amortization", unit: "yrs", min: 10, max: 40, step: 5, source: "Standard" },
+    { key: "pointsPct", label: "Points", unit: "%", min: 0, max: 4, step: 0.25, source: "Typical" },
+  ],
+  dscr: [
+    { key: "downPct", label: "Down payment", unit: "%", min: 0, max: 50, step: 0.5, source: "DSCR min" },
+    rateRow("Interest rate", "ratePct", 1.25),
+    { key: "amortYears", label: "Amortization", unit: "yrs", min: 10, max: 40, step: 5, source: "Standard" },
+    { key: "pointsPct", label: "Points", unit: "%", min: 0, max: 4, step: 0.25, source: "Typical" },
+    { key: "ioYears", label: "Interest-only period", unit: "yrs", min: 0, max: 10, step: 1, source: "None assumed" },
+  ],
+  fha: [
+    { key: "downPct", label: "Down payment", unit: "%", min: 3.5, max: 20, step: 0.5, source: "FHA min" },
+    rateRow("Interest rate", "ratePct", 0),
+    { key: "mipPct", label: "Annual MIP", unit: "%", min: 0, max: 1, step: 0.05, source: "HUD 2024" },
+  ],
+  subto: [
+    { key: "existingBalance", label: "Seller's loan balance", unit: "$", min: 0, max: 1500000, step: 1000, source: "Est. from sale", why: (_d, est) => (est ? `Estimated from the last sale: 80% loan at that year's average rate, paid down since. Get the mortgage statement.` : "No sale history, so 70% of value is assumed. Get the mortgage statement.") },
+    { key: "existingRatePct", label: "Seller's rate", unit: "%", min: 0, max: 10, step: 0.125, source: "Est. from sale" },
+    { key: "existingYearsLeft", label: "Years left on loan", unit: "yrs", min: 1, max: 30, step: 1, source: "Est. from sale" },
+    { key: "arrears", label: "Arrears to catch up", unit: "$", min: 0, max: 50000, step: 250, source: "None assumed" },
+    { key: "sellerCarryPct", label: "Seller equity carried as a note", unit: "%", min: 0, max: 100, step: 5, source: "Pure sub-to" },
+    ...sellerNote.map((s) => ({ ...s, show: (t: Terms) => t.sellerCarryPct > 0 && (!s.show || s.show(t)) })),
+  ],
+  hybrid: [],
+  sellerFinance: [{ key: "downPct", label: "Down payment to seller", unit: "%", min: 0, max: 40, step: 0.5, source: "Typical" }, ...sellerNote],
+  morby: [
+    { key: "bankLtvPct", label: "Bank loan (LTV)", unit: "%", min: 50, max: 90, step: 0.5, source: "DSCR max" },
+    rateRow("Bank rate", "ratePct", 1.25),
+    { key: "amortYears", label: "Bank amortization", unit: "yrs", min: 15, max: 40, step: 5, source: "Standard" },
+    { key: "pointsPct", label: "Bank points", unit: "%", min: 0, max: 4, step: 0.25, source: "Typical" },
+    { key: "morbyCarryPct", label: "Seller carry 2nd (% of price)", unit: "%", min: 0, max: 50, step: 0.5, source: "Morby std" },
+    ...sellerNote,
+  ],
+  brrrr: [
+    { key: "hmLtcPct", label: "Hard money (% of cost)", unit: "%", min: 0, max: 100, step: 1, source: "Typical" },
+    { key: "hmRatePct", label: "Hard money rate", unit: "%", min: 0, max: 18, step: 0.25, source: "Typical" },
+    { key: "hmPointsPct", label: "Hard money points", unit: "%", min: 0, max: 5, step: 0.25, source: "Typical" },
+    { key: "rehabMonths", label: "Rehab + seasoning", unit: "mo", min: 1, max: 18, step: 1, source: "6-mo seasoning" },
+    { key: "refiLtvPct", label: "Refi loan (% of ARV)", unit: "%", min: 50, max: 80, step: 0.5, source: "DSCR max" },
+    rateRow("Refi rate", "refiRatePct", 1.25),
+  ],
+};
+TERM_SPECS.hybrid = TERM_SPECS.subto;
+const TERM_LABEL: Partial<Record<keyof Terms, string>> = Object.fromEntries(
+  Object.values(TERM_SPECS).flat().map((s) => [s.key, s.label]),
+);
 
 function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "ok" | "bad" }) {
   return (
