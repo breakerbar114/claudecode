@@ -74,7 +74,12 @@ export async function lookup(address: string, keys: Keys): Promise<Lookup> {
   return j;
 }
 
+/** Hosted (artifact) build: no server, so no live lookup. Rates are a snapshot baked in at build time. */
+export const STATIC = import.meta.env.MODE === "artifact";
+declare const __RATES_SNAPSHOT__: Rates | null;
+
 export async function getRates(): Promise<Rates | null> {
+  if (STATIC) return typeof __RATES_SNAPSHOT__ !== "undefined" ? __RATES_SNAPSHOT__ : null;
   try {
     const r = await fetch("/api/rates");
     return r.ok ? r.json() : null;

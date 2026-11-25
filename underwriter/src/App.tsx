@@ -4,7 +4,7 @@ import { PriceCurve, Sensitivity } from "./components/Charts";
 import { Deal, HURDLE_LABEL, StructureId, Targets, Terms, fmt, money, maxPrice, requiredCoc, scorecard, underwrite } from "./lib/model";
 import { OpportunityPanel } from "./components/Opportunity";
 import { STRUCTURES, defaultTerms } from "./lib/structures";
-import { Keys, Lookup, Rates, confidence, getRates, lookup, store } from "./lib/api";
+import { Keys, Lookup, Rates, STATIC, confidence, getRates, lookup, store } from "./lib/api";
 import { estimateExistingLoan } from "./lib/estimate";
 import { initialPayment } from "./lib/finance";
 
@@ -69,6 +69,11 @@ export default function App() {
   async function runLookup(e?: React.FormEvent) {
     e?.preventDefault();
     if (!address.trim()) return;
+    if (STATIC) {
+      // Hosted version: no data server. The address labels the deal and drives the lookup links.
+      setData(null);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -127,7 +132,7 @@ export default function App() {
   const info = STRUCTURES.find((s) => s.id === structure)!;
 
   const saveDeal = () => {
-    const name = data?.address || `Deal ${library.length + 1}`;
+    const name = data?.address || address.trim() || `Deal ${library.length + 1}`;
     setLibrary((lib) => [{ name, deal, terms: termsBy, structure, lookup: data }, ...lib.filter((x) => x.name !== name)].slice(0, 30));
   };
   const loadDeal = (s: Saved) => {
@@ -146,7 +151,7 @@ export default function App() {
         </div>
         <form className="search" onSubmit={runLookup}>
           <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Type a property address — e.g. 123 Main St, Columbus, OH 43215" aria-label="Property address" />
-          <button type="submit" disabled={loading}>{loading ? "Pulling data…" : "Underwrite"}</button>
+          <button type="submit" disabled={loading}>{loading ? "Pulling data…" : STATIC ? "Set address" : "Underwrite"}</button>
         </form>
         <div className="top-actions">
           <button className="ghost" onClick={saveDeal}>Save</button>
@@ -156,7 +161,7 @@ export default function App() {
               {library.map((s, i) => <option key={i} value={i}>{s.name}</option>)}
             </select>
           )}
-          <button className="ghost" onClick={() => setShowKeys((v) => !v)}>Data keys</button>
+          {!STATIC && <button className="ghost" onClick={() => setShowKeys((v) => !v)}>Data keys</button>}
         </div>
       </header>
 
@@ -177,7 +182,7 @@ export default function App() {
       {/* ---------- Answer first ---------- */}
       <section className="hero card">
         <div className="hero-main">
-          <div className="eyebrow">{data ? data.address : "Sample deal — type an address above"}</div>
+          <div className="eyebrow">{data ? data.address : address.trim() ? address.trim() : "Sample deal — type an address above"}</div>
           <div className="hero-answer">
             {current.price === null ? (
               <>No price works under <b>{info.name}</b> for {money(targets.minCashFlow)}/door/mo{Number.isFinite(reqCoc) ? ` at ≥ ${reqCoc.toFixed(2)}% cash-on-cash` : ""}{targets.useDscr && structure !== "cash" ? ` & DSCR ≥ ${targets.minDscr}` : ""}.</>
@@ -217,6 +222,8 @@ export default function App() {
           <div className="grade-label">McElroy score {score.score}</div>
         </div>
       </section>
+
+      {STATIC && <LookupLinks address={address.trim()} asOf={macro?.asOf ?? null} />}
 
       {data?.warnings?.length ? (
         <div className="banner warn">{data.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}</div>
@@ -570,4 +577,31 @@ function macroFields(r: Rates): Partial<Deal> {
   if (r.inflation != null) out.inflationPct = r.inflation;
   if (r.fedFunds != null) out.riskFreePct = r.fedFunds;
   return out;
+}
+
+function LookupLinks({ address, asOf }: { address: string; asOf: string | null }) {
+  const q = encodeURIComponent(address);
+  const links = address
+    ? [
+        { label: "Value & rent estimate (Zillow)", href: `https://www.zillow.com/homes/${q}_rb/` },
+        { label: "Tax bill (county assessor)", href: `https://www.google.com/search?q=${encodeURIComponent(address + " property tax assessor")}` },
+        { label: "Rent comps", href: `https://www.google.com/search?q=${encodeURIComponent(address.replace(/^\d+\s+/, "") + " homes for rent")}` },
+        { label: "Insurance quote", href: "https://www.google.com/search?q=landlord+insurance+quote" },
+      ]
+    : [];
+  return (
+    <div className="banner info">
+      <div>
+        <b>Hosted version.</b> Live property lookup needs the local app with a RentCast key, so set price, rent, taxes and insurance with the sliders.
+        Rates, CPI and the Fed rate below are a snapshot{asOf ? ` from the week of ${asOf}` : ""}.
+      </div>
+      {links.length > 0 && (
+        <div className="lookup-links">
+          {links.map((l) => (
+            <a key={l.label} href={l.href} target="_blank" rel="noreferrer">{l.label} ↗</a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

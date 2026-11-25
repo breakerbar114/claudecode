@@ -4,3 +4,5 @@ dist
 server/.cache.json
 *.tsbuildinfo
 *.png
+dist-artifact
+deal-underwriter.html
