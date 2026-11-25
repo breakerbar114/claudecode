@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/components/Charts.tsx","./src/components/Slider.tsx","./src/lib/api.ts","./src/lib/estimate.ts","./src/lib/finance.ts","./src/lib/model.test.ts","./src/lib/model.ts","./src/lib/structures.ts"],"version":"5.6.3"}
