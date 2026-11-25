@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Rec, deviation } from "../lib/recommend";
 
 type Unit = "$" | "%" | "yrs" | "mo" | "x" | "" | "units";
 
@@ -12,6 +13,8 @@ interface Props {
   unit?: Unit;
   hint?: string;
   marker?: { value: number; label: string };
+  /** Fixed recommended value: drawn on the track, explained under it, one click to apply. */
+  rec?: Rec;
 }
 
 const fmtVal = (v: number, unit: Unit) => {
@@ -23,7 +26,7 @@ const fmtVal = (v: number, unit: Unit) => {
   return String(v);
 };
 
-export function Slider({ label, value, onChange, min, max, step = 1, unit = "", hint, marker }: Props) {
+export function Slider({ label, value, onChange, min, max, step = 1, unit = "", hint, marker, rec }: Props) {
   const [text, setText] = useState(String(value));
   const [editing, setEditing] = useState(false);
   useEffect(() => {
@@ -31,8 +34,10 @@ export function Slider({ label, value, onChange, min, max, step = 1, unit = "", 
   }, [value, editing]);
 
   // Let the track grow if the user types something beyond the preset range.
-  const lo = Math.min(min, value);
-  const hi = Math.max(max, value);
+  const lo = Math.min(min, value, rec?.value ?? Infinity);
+  const hi = Math.max(max, value, rec?.value ?? -Infinity);
+  const dev = rec ? deviation(value, rec) : null;
+  const atRec = rec ? Math.abs(value - rec.value) <= Math.max(step / 2, Math.abs(rec.value) * 0.005) : false;
   const pct = (v: number) => ((v - lo) / (hi - lo || 1)) * 100;
 
   return (
@@ -78,7 +83,25 @@ export function Slider({ label, value, onChange, min, max, step = 1, unit = "", 
         {marker && marker.value >= lo && marker.value <= hi && (
           <span className="slider-marker" style={{ left: `${pct(marker.value)}%` }} title={`${marker.label}: ${fmtVal(marker.value, unit)}`} />
         )}
+        {rec && <span className="slider-rec" style={{ left: `${pct(rec.value)}%` }} title={`Recommended: ${fmtVal(rec.value, unit)}`} />}
       </div>
+      {rec && (
+        <div className={`rec-line ${atRec ? "at" : dev?.aggressive ? "aggr" : ""}`}>
+          <span className="rec-badge">{atRec ? "✓ Recommended" : `Recommended ${fmtVal(rec.value, unit)}`}</span>
+          {!atRec && dev && (
+            <span className="rec-dev">
+              {dev.pct > 0 ? "+" : ""}
+              {dev.pct.toFixed(0)}%{dev.aggressive ? " · aggressive" : ""}
+            </span>
+          )}
+          {!atRec && (
+            <button className="rec-use" onClick={() => onChange(rec.value)}>
+              Use
+            </button>
+          )}
+          <span className="rec-why">{rec.why}</span>
+        </div>
+      )}
     </div>
   );
 }

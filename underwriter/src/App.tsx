@@ -3,6 +3,9 @@ import { Slider, Toggle } from "./components/Slider";
 import { PriceCurve, Sensitivity } from "./components/Charts";
 import { Deal, HURDLE_LABEL, StructureId, Targets, Terms, fmt, money, maxPrice, requiredCoc, scorecard, underwrite } from "./lib/model";
 import { OpportunityPanel } from "./components/Opportunity";
+import { RentCompsPanel } from "./components/RentComps";
+import { RentComp, Subject, runComps } from "./lib/comps";
+import { Rec, RecKey, recommend, stateFromAddress } from "./lib/recommend";
 import { STRUCTURES, defaultTerms } from "./lib/structures";
 import { Keys, Lookup, Rates, STATIC, confidence, getRates, lookup, store } from "./lib/api";
 import { estimateExistingLoan } from "./lib/estimate";
@@ -28,6 +31,28 @@ interface Saved {
   terms: TermsMap;
   structure: StructureId;
   lookup: Lookup | null;
+  comps?: RentComp[];
+  subject?: SubjectFacts;
+}
+
+type SubjectFacts = Subject & { yearBuilt?: number };
+
+function compsFromLookup(l: Lookup): RentComp[] {
+  return (l.rent?.comps ?? [])
+    .filter((c) => c.price > 0)
+    .map((c, i) => ({
+      id: `rc${i}`,
+      address: c.address,
+      rent: c.price,
+      beds: c.beds,
+      baths: c.baths,
+      sqft: c.sqft,
+      distance: c.distance,
+      date: c.date,
+      correlation: c.correlation,
+      include: true,
+      source: "rentcast" as const,
+    }));
 }
 
 export default function App() {
@@ -44,6 +69,9 @@ export default function App() {
   const [keys, setKeys] = useState<Keys>(store.get("uw:keys", { rentcast: "", census: "" }));
   const [showKeys, setShowKeys] = useState(false);
   const [library, setLibrary] = useState<Saved[]>(store.get("uw:library", []));
+  const [comps, setComps] = useState<RentComp[]>(saved?.comps ?? []);
+  const [subject, setSubject] = useState<SubjectFacts>(saved?.subject ?? {});
+  const [applyRecs, setApplyRecs] = useState(false);
   const [tab, setTab] = useState<"proforma" | "projection" | "comps">("proforma");
 
   const terms = termsBy[structure];
@@ -51,7 +79,7 @@ export default function App() {
   const setT = (k: keyof Terms) => (v: number | boolean) => setTermsBy((m) => ({ ...m, [structure]: { ...m[structure], [k]: v } }));
   const setTg = (k: keyof Targets) => (v: number | boolean) => setTargets((t) => ({ ...t, [k]: v }));
 
-  useEffect(() => store.set("uw:current", { name: "current", deal, terms: termsBy, structure, lookup: data }), [deal, termsBy, structure, data]);
+  useEffect(() => store.set("uw:current", { name: "current", deal, terms: termsBy, structure, lookup: data, comps, subject }), [deal, termsBy, structure, data, comps, subject]);
   useEffect(() => store.set("uw:targets", targets), [targets]);
   useEffect(() => store.set("uw:keys", keys), [keys]);
   useEffect(() => store.set("uw:library", library), [library]);
@@ -98,10 +126,6 @@ export default function App() {
         marketRatePct: rate,
         ...macroFields(l.rates),
         rehab: 0,
-        // Older buildings need more maintenance and bigger reserves — underwrite them that way.
-        repairsPct: (l.property.yearBuilt ?? 2000) < 1980 ? 9 : (l.property.yearBuilt ?? 2000) < 2000 ? 7 : 5,
-        capexPct: (l.property.yearBuilt ?? 2000) < 1980 ? 9 : (l.property.yearBuilt ?? 2000) < 2000 ? 7 : 5,
-        mgmtPct: units >= 5 ? 8 : 10,
       };
       setDeal(next);
       const t = allTerms(rate, next.price);
@@ -110,6 +134,9 @@ export default function App() {
         for (const id of ["subto", "hybrid"] as const) t[id] = { ...t[id], existingBalance: est.balance, existingRatePct: est.ratePct, existingYearsLeft: Math.max(1, Math.round(est.yearsLeft)) };
       }
       setTermsBy(t);
+      setComps(compsFromLookup(l));
+      setSubject({ beds: l.property.beds, baths: l.property.baths, sqft: l.property.sqft, yearBuilt: l.property.yearBuilt });
+      setApplyRecs(true); // start the underwrite from the recommended values once they're computed
     } catch (err) {
       setError(String((err as Error).message || err));
     } finally {
@@ -119,6 +146,45 @@ export default function App() {
 
   const result = useMemo(() => underwrite(structure, deal, terms), [structure, deal, terms]);
   const score = useMemo(() => scorecard(result, deal), [result, deal]);
+
+  // ---- Comps and recommended values. Built from property facts and data, never from slider positions. ----
+  const compResult = useMemo(() => runComps(comps, subject), [comps, subject]);
+  const propState = data?.geo?.state ?? stateFromAddress(address);
+  const recs = useMemo(
+    () =>
+      recommend({
+        units: deal.units,
+        state: propState,
+        yearBuilt: subject.yearBuilt,
+        marketValue: data?.value?.estimate ?? deal.marketValue,
+        comps: compResult,
+        rentAvmPerUnit: data?.rent?.perUnit,
+        rentAvmSource: data?.rent?.source,
+        lookupTaxRate: data?.taxes.ratePct,
+        lookupTaxSource: data?.taxes.source,
+        lookupInsurance: data?.insurance.annual,
+        currentRent: deal.rent,
+      }),
+    // currentRent only matters when there's no rent recommendation; leave it out so recommendations don't follow the slider.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deal.units, propState, subject.yearBuilt, data, deal.marketValue, compResult],
+  );
+  const recPatch = (r: Partial<Record<RecKey, Rec>>): Partial<Deal> => {
+    const p: Partial<Deal> = {};
+    for (const [k, v] of Object.entries(r)) if (v) (p as Record<string, number>)[k] = v.value;
+    if (r.taxRatePct) p.reassessTaxes = true;
+    return p;
+  };
+  const useAllRecs = () => setDeal((d) => ({ ...d, ...recPatch(recs) }));
+  useEffect(() => {
+    if (!applyRecs) return;
+    setApplyRecs(false);
+    useAllRecs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyRecs, recs]);
+  const recDeal = useMemo(() => ({ ...deal, ...recPatch(recs) }), [deal, recs]);
+  const recOffer = useMemo(() => maxPrice(structure, recDeal, terms, targets), [structure, recDeal, terms, targets]);
+  const offRec = (Object.keys(recs) as RecKey[]).filter((k) => Math.abs((deal[k] as number) - recs[k]!.value) > Math.max(0.01, Math.abs(recs[k]!.value) * 0.005));
   const offers = useMemo(
     () => STRUCTURES.map((s) => ({ s, ...maxPrice(s.id, deal, termsBy[s.id], targets) })),
     [deal, termsBy, targets],
@@ -133,13 +199,15 @@ export default function App() {
 
   const saveDeal = () => {
     const name = data?.address || address.trim() || `Deal ${library.length + 1}`;
-    setLibrary((lib) => [{ name, deal, terms: termsBy, structure, lookup: data }, ...lib.filter((x) => x.name !== name)].slice(0, 30));
+    setLibrary((lib) => [{ name, deal, terms: termsBy, structure, lookup: data, comps, subject }, ...lib.filter((x) => x.name !== name)].slice(0, 30));
   };
   const loadDeal = (s: Saved) => {
     setDeal(s.deal);
     setTermsBy(allTerms(s.deal.marketRatePct, s.deal.price, s.terms));
     setStructure(s.structure);
     setData(s.lookup);
+    setComps(s.comps ?? []);
+    setSubject(s.subject ?? {});
     setAddress(s.lookup?.address ?? "");
   };
 
@@ -204,6 +272,13 @@ export default function App() {
               <button className="link" onClick={() => setDeal((d) => ({ ...d, price: current.price! }))}>Set price to max →</button>
             )}
           </div>
+          {offRec.length > 0 && recOffer.price !== null && (
+            <div className="hero-rec">
+              At recommended values: <b>{money(recOffer.price)}{recOffer.capped ? "+" : ""}</b> max offer
+              {current.price !== null && recOffer.price < current.price && <span className="bad"> · your inputs are {money(current.price - recOffer.price)} more optimistic</span>}
+              <button className="link" onClick={useAllRecs}>Use recommended →</button>
+            </div>
+          )}
           {data && (
             <div className="facts">
               {data.property.type && <span>{data.property.type}</span>}
@@ -275,20 +350,26 @@ export default function App() {
             <Slider label="Units" unit="units" value={deal.units} min={1} max={20} onChange={setD("units")} />
           </Group>
 
+          {offRec.length > 0 && (
+            <button className="rec-all" onClick={useAllRecs}>
+              Use all recommended values ({offRec.length} differ)
+            </button>
+          )}
+
           <Group title="Income">
-            <Slider label="Gross rent (all units) / mo" unit="$" value={deal.rent} min={0} max={Math.max(6000, deal.rent * 2)} step={25} onChange={setD("rent")} marker={data?.rent ? { value: data.rent.perUnit * deal.units, label: "Rent AVM" } : undefined} />
+            <Slider label="Gross rent (all units) / mo" unit="$" value={deal.rent} min={0} max={Math.max(6000, deal.rent * 2)} step={25} onChange={setD("rent")} marker={data?.rent && compResult.recommended ? { value: data.rent.perUnit * deal.units, label: "Rent AVM" } : undefined} rec={recs.rent} />
             <Slider label="Other income / mo" unit="$" value={deal.otherIncome} min={0} max={1000} step={10} onChange={setD("otherIncome")} />
-            <Slider label="Vacancy & credit loss" unit="%" value={deal.vacancyPct} min={0} max={25} step={0.5} onChange={setD("vacancyPct")} hint="Ken: never underwrite less than 5%, even if it's 100% full today" />
+            <Slider label="Vacancy & credit loss" unit="%" value={deal.vacancyPct} min={0} max={25} step={0.5} onChange={setD("vacancyPct")} hint="Ken: never underwrite less than 5%, even if it's 100% full today" rec={recs.vacancyPct} />
           </Group>
 
           <Group title="Expenses">
-            <Slider label="Property tax rate" unit="%" value={deal.taxRatePct} min={0} max={4} step={0.01} onChange={setD("taxRatePct")} hint={data?.taxes.source} />
+            <Slider label="Property tax rate" unit="%" value={deal.taxRatePct} min={0} max={4} step={0.01} onChange={setD("taxRatePct")} rec={recs.taxRatePct} />
             <Toggle label="Reassess taxes at my purchase price" value={deal.reassessTaxes} onChange={setD("reassessTaxes")} hint="Ken's rule: the county re-assesses after a sale. Underwrite YOUR tax bill, not the seller's." />
             {!deal.reassessTaxes && <Slider label="Current tax bill / yr" unit="$" value={deal.taxesAnnualActual} min={0} max={30000} step={50} onChange={setD("taxesAnnualActual")} />}
-            <Slider label="Insurance / yr" unit="$" value={deal.insuranceAnnual} min={0} max={15000} step={50} onChange={setD("insuranceAnnual")} hint={data?.insurance.source} />
-            <Slider label="Property management" unit="%" value={deal.mgmtPct} min={0} max={15} step={0.5} onChange={setD("mgmtPct")} />
-            <Slider label="Repairs & maintenance" unit="%" value={deal.repairsPct} min={0} max={20} step={0.5} onChange={setD("repairsPct")} />
-            <Slider label="CapEx reserves" unit="%" value={deal.capexPct} min={0} max={20} step={0.5} onChange={setD("capexPct")} />
+            <Slider label="Insurance / yr" unit="$" value={deal.insuranceAnnual} min={0} max={15000} step={50} onChange={setD("insuranceAnnual")} rec={recs.insuranceAnnual} />
+            <Slider label="Property management" unit="%" value={deal.mgmtPct} min={0} max={15} step={0.5} onChange={setD("mgmtPct")} rec={recs.mgmtPct} />
+            <Slider label="Repairs & maintenance" unit="%" value={deal.repairsPct} min={0} max={20} step={0.5} onChange={setD("repairsPct")} rec={recs.repairsPct} />
+            <Slider label="CapEx reserves" unit="%" value={deal.capexPct} min={0} max={20} step={0.5} onChange={setD("capexPct")} rec={recs.capexPct} />
             <Slider label="HOA / mo" unit="$" value={deal.hoaMonthly} min={0} max={1000} step={5} onChange={setD("hoaMonthly")} />
             <Slider label="Owner-paid utilities / mo" unit="$" value={deal.utilitiesMonthly} min={0} max={2000} step={10} onChange={setD("utilitiesMonthly")} />
             <Slider label="Other (lawn, pest, admin) / mo" unit="$" value={deal.otherExpMonthly} min={0} max={1000} step={5} onChange={setD("otherExpMonthly")} />
@@ -368,6 +449,18 @@ export default function App() {
               <ul className="notes">{result.financing.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
             </div>
           </div>
+
+          <RentCompsPanel
+            result={compResult}
+            subject={subject}
+            setSubject={setSubject}
+            comps={comps}
+            setComps={setComps}
+            units={deal.units}
+            currentRent={deal.rent}
+            onUse={(v) => setDeal((d) => ({ ...d, rent: v }))}
+            hosted={STATIC}
+          />
 
           <OpportunityPanel
             result={result}

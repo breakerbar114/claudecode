@@ -14,6 +14,8 @@
   --bad: #c4314b;
   --bad-soft: #fde8ec;
   --radius: 12px;
+  --rec: #7a4cd9;
+  --rec-soft: #f1ebff;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -32,6 +34,8 @@
     --ok-soft: #33290f;
     --bad: #ff6b81;
     --bad-soft: #3a1a22;
+    --rec: #b69bff;
+    --rec-soft: #2a2140;
     color-scheme: dark;
   }
 }
@@ -50,6 +54,8 @@
     --ok-soft: #33290f;
     --bad: #ff6b81;
     --bad-soft: #3a1a22;
+    --rec: #b69bff;
+    --rec-soft: #2a2140;
     color-scheme: dark;
   }
 
@@ -238,3 +244,31 @@ footer { margin-top: 20px; text-align: center; }
 .banner.info { background: var(--accent-soft); color: var(--text); }
 .lookup-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .lookup-links a { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; text-decoration: none; font-weight: 600; font-size: 12px; }
+
+/* Recommended values */
+.slider-rec { position: absolute; top: 5px; width: 10px; height: 10px; background: var(--rec); transform: translateX(-5px) rotate(45deg); border-radius: 2px; pointer-events: none; box-shadow: 0 0 0 2px var(--surface); }
+.rec-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
+.rec-badge { font-weight: 650; color: var(--rec); }
+.rec-line.at .rec-badge { color: var(--good); }
+.rec-dev { font-weight: 600; }
+.rec-line.aggr .rec-dev { color: var(--bad); }
+.rec-use { background: var(--rec-soft); color: var(--rec); border: 0; border-radius: 5px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+.rec-why { flex-basis: 100%; line-height: 1.35; }
+.rec-all { width: 100%; border: 1px dashed var(--rec); background: var(--rec-soft); color: var(--rec); border-radius: 10px; padding: 9px; font-weight: 700; }
+.hero-rec { margin-top: 8px; font-size: 13px; color: var(--muted); }
+.hero-rec b { color: var(--rec); }
+.comp-summary { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 12px; }
+.comp-rec { font-size: 26px; font-weight: 800; color: var(--rec); letter-spacing: -0.01em; }
+.comp-actions { display: grid; gap: 6px; justify-items: end; }
+.rec-use.big { font-size: 13px; padding: 7px 14px; border-radius: 8px; }
+.subject { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; padding: 10px 12px; background: var(--surface-2); border-radius: 10px; margin-bottom: 12px; }
+.subject > span { flex-basis: 100%; }
+.subject label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+.subject input, .comp-add input { width: 84px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); }
+table.comps td.addr { max-width: 220px; }
+table.comps tr.dim td { opacity: 0.45; }
+.comp-add { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.comp-add input:first-child { flex: 1 1 180px; width: auto; }
+.comp-add button { background: var(--accent); color: #fff; border: 0; border-radius: 7px; padding: 6px 14px; font-weight: 600; }
+table.plain.comps td.addr, table.plain.comps th:nth-child(2) { text-align: left; }
+table.plain.comps th, table.plain.comps td { white-space: nowrap; } table.plain.comps td.addr { white-space: normal; min-width: 150px; }
