@@ -211,3 +211,8 @@ footer { margin-top: 20px; text-align: center; }
   .top-actions { width: 100%; }
   .search { min-width: 0; flex-basis: 100%; order: 3; }
 }
+
+.field { display: grid; gap: 4px; font-size: 13px; }
+.field select { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.verdict { margin: 12px 0 6px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); font-size: 13px; }
+.verdict.warn-bg { background: var(--ok-soft); }

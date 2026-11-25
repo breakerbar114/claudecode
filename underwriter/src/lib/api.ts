@@ -48,6 +48,11 @@ export interface Rates {
   source: string;
   investorSpread: number;
   dscrSpread: number;
+  fedFunds: number | null;
+  fedFundsAsOf: string | null;
+  tbill3m: number | null;
+  inflation: number | null;
+  inflationAsOf: string | null;
 }
 
 export interface Keys {

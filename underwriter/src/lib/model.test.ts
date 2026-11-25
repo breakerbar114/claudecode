@@ -1,5 +1,5 @@
 import { pmt, schedule, irr } from "./finance";
-import { underwrite, maxPrice, Deal, Targets } from "./model";
+import { underwrite, maxPrice, vsRiskFree, Deal, Targets } from "./model";
 import { defaultTerms } from "./structures";
 
 const deal: Deal = {
@@ -7,9 +7,9 @@ const deal: Deal = {
   vacancyPct: 6, mgmtPct: 10, repairsPct: 6, capexPct: 6, taxRatePct: 1.2, taxesAnnualActual: 2800,
   reassessTaxes: true, insuranceAnnual: 1800, hoaMonthly: 0, utilitiesMonthly: 0, otherExpMonthly: 0,
   closingCostPct: 3, rehab: 0, marketRatePct: 6.5, rentGrowthPct: 3, expenseGrowthPct: 3,
-  appreciationPct: 3, holdYears: 5, sellingCostPct: 7,
+  appreciationPct: 3, holdYears: 5, sellingCostPct: 7, inflationPct: 3, riskFreePct: 4,
 };
-const tg: Targets = { minCashFlow: 200, minDscr: 1.25, minCoc: 8, useDscr: false, useCoc: false, maxCashLeft: 10000 };
+const tg: Targets = { minCashFlow: 200, minDscr: 1.25, minCoc: 8, useDscr: false, useCoc: false, maxCashLeft: 10000, beatInflation: false, cashHurdle: "inflation", cashPremiumPct: 2 };
 
 test("pmt matches known value", () => {
   expect(pmt(200000, 6, 30)).toBeCloseTo(1199.1, 1);
@@ -37,7 +37,7 @@ test("conventional underwrite is internally consistent", () => {
 });
 
 test("max price solver returns a price that just meets target", () => {
-  for (const id of ["conventional", "dscr", "cash", "sellerFinance", "morby", "subto", "hybrid"] as const) {
+  for (const id of ["conventional", "dscr", "sellerFinance", "morby", "subto", "hybrid"] as const) {
     const t = defaultTerms(id, 6.5, 250000);
     const m = maxPrice(id, deal, t, tg);
     if (m.price === null || m.capped) continue;
@@ -59,4 +59,26 @@ test("BRRRR all-cash-out gives infinite CoC when cash left <= 0", () => {
   const r = underwrite("brrrr", d, defaultTerms("brrrr", 6.5, 120000));
   expect(r.financing.cashLeftInDeal!).toBeLessThan(0);
   expect(r.coc).toBe(Infinity);
+});
+
+test("all-cash max price is bounded by the hurdle, and tighter at the Fed rate than at inflation", () => {
+  const t = defaultTerms("cash", 6.5, 250000);
+  const atInfl = maxPrice("cash", deal, t, { ...tg, cashHurdle: "inflation" });
+  const atFed = maxPrice("cash", deal, t, { ...tg, cashHurdle: "fed" });
+  const atFedPlus = maxPrice("cash", deal, t, { ...tg, cashHurdle: "fedPlus" });
+  expect(atInfl.capped).toBe(false);
+  expect(atFed.price!).toBeLessThan(atInfl.price!);
+  expect(atFedPlus.price!).toBeLessThan(atFed.price!);
+  const r = underwrite("cash", deal, t, atFed.price!);
+  expect(r.coc).toBeGreaterThanOrEqual(4);
+  expect(underwrite("cash", deal, t, atFed.price! + 2000).coc).toBeLessThan(4.05);
+});
+
+test("vsRiskFree compares the same cash at the Fed rate", () => {
+  const r = underwrite("cash", deal, defaultTerms("cash", 6.5, 250000));
+  const o = vsRiskFree(r, deal)!;
+  expect(o.cash).toBeCloseTo(r.cashInvested, 6);
+  expect(o.fedIncome).toBeCloseTo(r.cashInvested * 0.04, 6);
+  expect(o.fedEndWealth).toBeCloseTo(r.cashInvested * Math.pow(1.04, 5), 4);
+  expect(o.realFedYield).toBeCloseTo(1, 6);
 });

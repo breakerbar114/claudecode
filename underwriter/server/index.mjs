@@ -37,30 +37,52 @@ async function getJson(url, headers = {}) {
   return r.json();
 }
 
-// ---------- Mortgage rates (Freddie Mac PMMS via FRED, no key) ----------
-async function fredLatest(series) {
+// ---------- Rates, Fed funds, inflation (FRED, no key) ----------
+async function fredSeries(series) {
+  const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 800).toISOString().slice(0, 10);
   return cached(`fred:${series}`, 1000 * 60 * 60 * 12, async () => {
-    const r = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${series}`, { headers: { "User-Agent": "deal-underwriter/0.1", Accept: "*/*" } });
+    const r = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${series}&cosd=${since}`, {
+      headers: { "User-Agent": "deal-underwriter/0.1", Accept: "*/*" },
+    });
     if (!r.ok) return null;
-    const rows = (await r.text()).trim().split("\n").slice(1).map((l) => l.split(","));
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const v = parseFloat(rows[i][1]);
-      if (!Number.isNaN(v)) return { date: rows[i][0], rate: v };
-    }
-    return null;
+    const rows = (await r.text())
+      .trim()
+      .split("\n")
+      .slice(1)
+      .map((l) => l.split(","))
+      .map(([date, v]) => ({ date, value: parseFloat(v) }))
+      .filter((x) => !Number.isNaN(x.value));
+    return rows.length ? rows : null;
   });
 }
 
+const last = (rows) => (rows ? rows[rows.length - 1] : null);
+
+/** CPI-U year-over-year % from the latest monthly print. */
+function cpiYoY(rows) {
+  if (!rows || rows.length < 13) return null;
+  const now = rows[rows.length - 1];
+  const yearAgo = rows[rows.length - 13];
+  return { date: now.date, value: +((now.value / yearAgo.value - 1) * 100).toFixed(2) };
+}
+
 async function rates() {
-  const [r30, r15] = await Promise.all([fredLatest("MORTGAGE30US").catch(() => null), fredLatest("MORTGAGE15US").catch(() => null)]);
+  const safe = (s) => fredSeries(s).catch(() => null);
+  const [r30, r15, dff, cpi, tbill] = await Promise.all([safe("MORTGAGE30US"), safe("MORTGAGE15US"), safe("DFF"), safe("CPIAUCSL"), safe("DTB3")]);
+  const infl = cpiYoY(cpi);
   return {
-    thirtyYear: r30?.rate ?? 7.0,
-    fifteenYear: r15?.rate ?? 6.25,
-    asOf: r30?.date ?? null,
+    thirtyYear: last(r30)?.value ?? 7.0,
+    fifteenYear: last(r15)?.value ?? 6.25,
+    asOf: last(r30)?.date ?? null,
     source: r30 ? "Freddie Mac PMMS (FRED)" : "default (FRED unavailable)",
     // Typical spreads over owner-occupied PMMS for investor products.
     investorSpread: 0.75,
     dscrSpread: 1.25,
+    fedFunds: last(dff)?.value ?? null,
+    fedFundsAsOf: last(dff)?.date ?? null,
+    tbill3m: last(tbill)?.value ?? null,
+    inflation: infl?.value ?? null,
+    inflationAsOf: infl?.date ?? null,
   };
 }
 

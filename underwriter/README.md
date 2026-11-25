@@ -19,6 +19,7 @@ npm run build && npm start   # serves app + API on :8787
 |---|---|---|
 | Address match, lat/lon, census tract | US Census geocoder | none |
 | Mortgage rates (30 / 15 yr) | Freddie Mac PMMS via FRED, weekly | none |
+| Fed funds rate, 3-mo T-bill, CPI inflation (YoY) | FRED (`DFF`, `DTB3`, `CPIAUCSL`) | none |
 | Beds/baths/sqft/year, last sale, owner, HOA, **actual tax bill** | RentCast property record | `RENTCAST_API_KEY` |
 | **Value AVM + sale comps** | RentCast `/avm/value` | `RENTCAST_API_KEY` |
 | **Rent AVM + rent comps** | RentCast `/avm/rent/long-term` | `RENTCAST_API_KEY` |
@@ -43,9 +44,15 @@ Conventional · DSCR · FHA house hack · All cash · **Subject-To** · **Hybrid
 
 For Sub-To, the seller's existing loan is estimated from their last sale price, date and that year's average rate. Replace the estimate with the real mortgage statement.
 
+## Inflation & the Fed rate
+
+- **Beat inflation** (on by default): cash-on-cash must be at least the latest CPI year-over-year, so the cash you put in isn't losing buying power.
+- **All-cash hurdle**: an all-cash buy has to beat inflation, the Fed rate, or the Fed rate plus a risk premium you choose. It never goes below inflation, so the max offer is always a real number, never "Any".
+- **Your cash vs. the Fed rate** panel: the same dollars in the property vs. parked at the Fed rate. It shows year-1 income, real yield, ending wealth in nominal and today's dollars, and real IRR, plus the most you can pay all cash under each hurdle.
+
 ## Max-offer solver
 
-`maxPrice()` in `src/lib/model.ts` bisects on price to find the highest price that meets your targets: cash flow per door, plus optional DSCR and cash-on-cash. For all cash it requires the cash-on-cash target. For BRRRR it also caps the cash left in the deal.
+`maxPrice()` in `src/lib/model.ts` bisects on price to find the highest price that meets your targets: cash flow per door, beating inflation, plus optional DSCR and cash-on-cash. For all cash it applies the all-cash hurdle. For BRRRR it also caps the cash left in the deal.
 
 ## Tests
 

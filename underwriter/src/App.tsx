@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Slider, Toggle } from "./components/Slider";
 import { PriceCurve, Sensitivity } from "./components/Charts";
-import { Deal, StructureId, Targets, Terms, fmt, money, maxPrice, scorecard, underwrite } from "./lib/model";
+import { Deal, HURDLE_LABEL, StructureId, Targets, Terms, fmt, money, maxPrice, requiredCoc, scorecard, underwrite } from "./lib/model";
+import { OpportunityPanel } from "./components/Opportunity";
 import { STRUCTURES, defaultTerms } from "./lib/structures";
-import { Keys, Lookup, confidence, getRates, lookup, store } from "./lib/api";
+import { Keys, Lookup, Rates, confidence, getRates, lookup, store } from "./lib/api";
 import { estimateExistingLoan } from "./lib/estimate";
 import { initialPayment } from "./lib/finance";
 
@@ -12,10 +13,10 @@ const SAMPLE: Deal = {
   vacancyPct: 7, mgmtPct: 10, repairsPct: 7, capexPct: 7, taxRatePct: 1.1, taxesAnnualActual: 2900,
   reassessTaxes: true, insuranceAnnual: 2100, hoaMonthly: 0, utilitiesMonthly: 0, otherExpMonthly: 0,
   closingCostPct: 3, rehab: 0, marketRatePct: 6.5, rentGrowthPct: 3, expenseGrowthPct: 3.5,
-  appreciationPct: 3, holdYears: 7, sellingCostPct: 7,
+  appreciationPct: 3, holdYears: 7, sellingCostPct: 7, inflationPct: 3, riskFreePct: 4,
 };
 
-const DEFAULT_TARGETS: Targets = { minCashFlow: 200, minDscr: 1.25, minCoc: 8, useDscr: true, useCoc: false, maxCashLeft: 10000 };
+const DEFAULT_TARGETS: Targets = { minCashFlow: 200, minDscr: 1.25, minCoc: 8, useDscr: true, useCoc: false, maxCashLeft: 10000, beatInflation: true, cashHurdle: "inflation", cashPremiumPct: 2 };
 
 type TermsMap = Record<StructureId, Terms>;
 const allTerms = (rate: number, price: number, prev?: Partial<TermsMap>): TermsMap =>
@@ -31,10 +32,11 @@ interface Saved {
 
 export default function App() {
   const saved = store.get<Saved | null>("uw:current", null);
-  const [deal, setDeal] = useState<Deal>(saved?.deal ?? SAMPLE);
+  const [deal, setDeal] = useState<Deal>({ ...SAMPLE, ...(saved?.deal ?? {}) });
   const [termsBy, setTermsBy] = useState<TermsMap>(saved?.terms ? allTerms(SAMPLE.marketRatePct, SAMPLE.price, saved.terms) : allTerms(SAMPLE.marketRatePct, SAMPLE.price));
   const [structure, setStructure] = useState<StructureId>(saved?.structure ?? "conventional");
-  const [targets, setTargets] = useState<Targets>(store.get("uw:targets", DEFAULT_TARGETS));
+  const [targets, setTargets] = useState<Targets>({ ...DEFAULT_TARGETS, ...store.get<Partial<Targets>>("uw:targets", {}) });
+  const [macro, setMacro] = useState<Rates | null>(saved?.lookup?.rates ?? null);
   const [data, setData] = useState<Lookup | null>(saved?.lookup ?? null);
   const [address, setAddress] = useState(saved?.lookup?.address ?? "");
   const [loading, setLoading] = useState(false);
@@ -53,12 +55,13 @@ export default function App() {
   useEffect(() => store.set("uw:targets", targets), [targets]);
   useEffect(() => store.set("uw:keys", keys), [keys]);
   useEffect(() => store.set("uw:library", library), [library]);
+  // Inflation and the Fed rate are refreshed on every load. They're market data, not deal assumptions.
   useEffect(() => {
-    if (saved) return;
     getRates().then((r) => {
       if (!r) return;
-      setDeal((d) => ({ ...d, marketRatePct: r.thirtyYear }));
-      setTermsBy(allTerms(r.thirtyYear, SAMPLE.price));
+      setMacro(r);
+      setDeal((d) => ({ ...d, ...macroFields(r), ...(saved ? {} : { marketRatePct: r.thirtyYear }) }));
+      if (!saved) setTermsBy(allTerms(r.thirtyYear, SAMPLE.price));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -71,6 +74,7 @@ export default function App() {
     try {
       const l = await lookup(address.trim(), keys);
       setData(l);
+      setMacro(l.rates);
       const units = Math.max(1, l.property.units || 1);
       const value = l.value?.estimate ?? deal.marketValue;
       const rate = l.rates.thirtyYear;
@@ -87,6 +91,7 @@ export default function App() {
         insuranceAnnual: l.insurance.annual,
         hoaMonthly: l.property.hoaMonthly ?? 0,
         marketRatePct: rate,
+        ...macroFields(l.rates),
         rehab: 0,
         // Older buildings need more maintenance and bigger reserves — underwrite them that way.
         repairsPct: (l.property.yearBuilt ?? 2000) < 1980 ? 9 : (l.property.yearBuilt ?? 2000) < 2000 ? 7 : 5,
@@ -114,6 +119,7 @@ export default function App() {
     [deal, termsBy, targets],
   );
   const current = offers.find((o) => o.s.id === structure)!;
+  const reqCoc = requiredCoc(structure, deal, targets);
   const targetCF = targets.minCashFlow * deal.units;
   const ref = deal.marketValue || deal.price;
   const valConf = confidence(data?.value?.estimate, data?.value?.low, data?.value?.high);
@@ -174,15 +180,18 @@ export default function App() {
           <div className="eyebrow">{data ? data.address : "Sample deal — type an address above"}</div>
           <div className="hero-answer">
             {current.price === null ? (
-              <>No price works under <b>{info.name}</b> for {money(targets.minCashFlow)}/door/mo{targets.useDscr ? ` & DSCR ≥ ${targets.minDscr}` : ""}.</>
+              <>No price works under <b>{info.name}</b> for {money(targets.minCashFlow)}/door/mo{Number.isFinite(reqCoc) ? ` at ≥ ${reqCoc.toFixed(2)}% cash-on-cash` : ""}{targets.useDscr && structure !== "cash" ? ` & DSCR ≥ ${targets.minDscr}` : ""}.</>
             ) : (
               <>
-                Cash flows <b>{money(targets.minCashFlow)}/door</b> at <span className="big">{current.capped ? "any price" : `${money(current.price)}`}</span> or less
+                Cash flows <b>{money(targets.minCashFlow)}/door</b>
+                {Number.isFinite(reqCoc) && <> and <b>{reqCoc.toFixed(2)}%</b> cash-on-cash</>} at{" "}
+                <span className="big">{money(current.price)}{current.capped ? "+" : ""}</span> or less
               </>
             )}
           </div>
           <div className="hero-sub">
             {info.name}
+            {Number.isFinite(reqCoc) && <> · {structure === "cash" && reqCoc > deal.inflationPct ? `cash yield ${HURDLE_LABEL[targets.cashHurdle]}` : targets.cashHurdle !== "inflation" && structure === "cash" ? "cash yield beats inflation (stricter than the Fed rate today)" : "cash yield beats inflation"}</>}
             {current.price !== null && !current.capped && ref > 0 && (
               <> · {((current.price / ref) * 100).toFixed(0)}% of {money(ref)} value · {current.price >= ref ? "works at full value" : `offer ${money(ref - current.price)} below value`}</>
             )}
@@ -220,7 +229,7 @@ export default function App() {
           return (
             <button key={s.id} className={`struct ${s.id === structure ? "active" : ""}`} onClick={() => setStructure(s.id)} title={s.blurb}>
               <div className="struct-name">{s.short}{s.creative && <span className="tag">creative</span>}</div>
-              <div className="struct-max">{price === null ? "—" : capped ? "Any" : `${money(price / 1000)}k`}</div>
+              <div className="struct-max">{price === null ? "—" : `${money(price / 1000)}k${capped ? "+" : ""}`}</div>
               <div className="struct-sub">max offer</div>
               <div className={`struct-cf ${r.cashFlow >= targetCF ? "good" : r.cashFlow >= 0 ? "ok" : "bad"}`}>{money(r.cashFlow)}/mo @ your price</div>
             </button>
@@ -237,6 +246,16 @@ export default function App() {
             {targets.useDscr && <Slider label="Min DSCR" unit="x" value={targets.minDscr} min={1} max={2} step={0.05} onChange={setTg("minDscr")} />}
             <Toggle label={`Require cash-on-cash ≥ ${targets.minCoc}%`} value={targets.useCoc} onChange={setTg("useCoc")} />
             {targets.useCoc && <Slider label="Min cash-on-cash" unit="%" value={targets.minCoc} min={0} max={25} step={0.5} onChange={setTg("minCoc")} />}
+            <Toggle label={`Cash-on-cash must beat inflation (${deal.inflationPct}%)`} value={targets.beatInflation} onChange={setTg("beatInflation")} hint="Your cash flow has to at least keep pace with CPI, or the money you put in is losing buying power." />
+            <div className="field">
+              <label htmlFor="hurdle">All-cash hurdle</label>
+              <select id="hurdle" value={targets.cashHurdle} onChange={(e) => setTargets((t) => ({ ...t, cashHurdle: e.target.value as Targets["cashHurdle"] }))}>
+                <option value="inflation">Beat inflation ({deal.inflationPct}%)</option>
+                <option value="fed">Beat the Fed rate ({deal.riskFreePct}%)</option>
+                <option value="fedPlus">Fed rate + premium ({(deal.riskFreePct + targets.cashPremiumPct).toFixed(2)}%)</option>
+              </select>
+            </div>
+            {targets.cashHurdle === "fedPlus" && <Slider label="Risk premium over Fed rate" unit="%" value={targets.cashPremiumPct} min={0} max={8} step={0.25} onChange={setTg("cashPremiumPct")} hint="Extra yield you want for taking on tenants, repairs and illiquidity instead of holding T-bills" />}
             {structure === "brrrr" && <Slider label="Max cash left in deal" unit="$" value={targets.maxCashLeft} min={0} max={100000} step={1000} onChange={setTg("maxCashLeft")} />}
           </Group>
 
@@ -275,6 +294,12 @@ export default function App() {
             <button className="link" onClick={() => setTermsBy((m) => ({ ...m, [structure]: defaultTerms(structure, deal.marketRatePct, deal.price) }))}>Reset {info.short} terms</button>
           </Group>
 
+          <Group title="Inflation & Fed rate">
+            <Slider label="Inflation (CPI, YoY)" unit="%" value={deal.inflationPct} min={0} max={10} step={0.05} onChange={setD("inflationPct")} marker={macro?.inflation != null ? { value: macro.inflation, label: "Latest CPI" } : undefined} />
+            <Slider label="Fed funds rate" unit="%" value={deal.riskFreePct} min={0} max={8} step={0.05} onChange={setD("riskFreePct")} marker={macro?.fedFunds != null ? { value: macro.fedFunds, label: "Effective Fed funds" } : undefined} />
+            <div className="rate-note">{macro?.inflation != null ? `Live from FRED: CPI ${macro.inflation}% (${macro.inflationAsOf?.slice(0, 7)}), Fed funds ${macro.fedFunds}% (${macro.fedFundsAsOf})` : "Couldn't load live FRED data, so these are defaults."}</div>
+          </Group>
+
           <Group title="Growth & exit" collapsed>
             <Slider label="Rent growth / yr" unit="%" value={deal.rentGrowthPct} min={-3} max={8} step={0.25} onChange={setD("rentGrowthPct")} />
             <Slider label="Expense growth / yr" unit="%" value={deal.expenseGrowthPct} min={0} max={8} step={0.25} onChange={setD("expenseGrowthPct")} />
@@ -288,11 +313,11 @@ export default function App() {
         <section className="results">
           <div className="kpis">
             <Kpi label="Cash flow / mo" value={`${money(result.cashFlow)}`} tone={result.cashFlow >= targetCF ? "good" : result.cashFlow >= 0 ? "ok" : "bad"} sub={`${money(result.cashFlow * 12)}/yr · ${money(result.cashFlow / deal.units)}/door`} />
-            <Kpi label="Cash-on-cash" value={Number.isFinite(result.coc) ? `${result.coc.toFixed(1)}%` : "∞"} tone={result.coc >= 8 ? "good" : result.coc >= 0 ? "ok" : "bad"} sub={`on ${money(result.cashInvested)} invested`} />
+            <Kpi label="Cash-on-cash" value={Number.isFinite(result.coc) ? `${result.coc.toFixed(1)}%` : "∞"} tone={result.coc >= Math.max(8, reqCoc) ? "good" : result.coc >= deal.inflationPct ? "ok" : "bad"} sub={`on ${money(result.cashInvested)} · real ${Number.isFinite(result.coc) ? (result.coc - deal.inflationPct).toFixed(1) + "%" : "∞"}`} />
             <Kpi label="Cap rate" value={`${result.capRate.toFixed(2)}%`} sub={`NOI ${money(result.noi * 12)}/yr`} />
             <Kpi label="DSCR" value={Number.isFinite(result.dscr) ? `${result.dscr.toFixed(2)}×` : "n/a"} tone={result.dscr >= 1.25 ? "good" : result.dscr >= 1 ? "ok" : "bad"} sub={`Debt ${money(result.debtService)}/mo`} />
             <Kpi label="Cash to close" value={`${money(result.financing.cashToClose)}`} sub={result.financing.cashLeftInDeal !== undefined ? `${money(result.financing.cashLeftInDeal)} left after refi` : `incl. closing & rehab`} />
-            <Kpi label={`${deal.holdYears}-yr IRR`} value={Number.isFinite(result.irr) ? `${result.irr.toFixed(1)}%` : "∞"} sub={`${Number.isFinite(result.equityMultiple) ? result.equityMultiple.toFixed(2) + "× equity" : "no cash in"} · ${money(result.totalProfit)} profit`} />
+            <Kpi label={`${deal.holdYears}-yr IRR`} value={Number.isFinite(result.irr) ? `${result.irr.toFixed(1)}%` : "∞"} sub={`${Number.isFinite(result.irr) ? `real ${(((1 + result.irr / 100) / (1 + deal.inflationPct / 100) - 1) * 100).toFixed(1)}% · ` : ""}${Number.isFinite(result.equityMultiple) ? result.equityMultiple.toFixed(2) + "× equity" : "no cash in"} · ${money(result.totalProfit)} profit`} />
           </div>
 
           <div className="card">
@@ -336,6 +361,16 @@ export default function App() {
               <ul className="notes">{result.financing.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
             </div>
           </div>
+
+          <OpportunityPanel
+            result={result}
+            deal={deal}
+            cashTerms={termsBy.cash}
+            targets={targets}
+            tbill={macro?.tbill3m ?? null}
+            asOf={{ fed: macro?.fedFundsAsOf ?? null, cpi: macro?.inflationAsOf ?? null }}
+            onSetPrice={(p) => { setStructure("cash"); setDeal((d) => ({ ...d, price: p })); }}
+          />
 
           <div className="card">
             <div className="tabs">
@@ -528,4 +563,11 @@ function CompsPanel({ data }: { data: Lookup | null }) {
       {table("Sale comps", data.value?.comps ?? [], "Price")}
     </div>
   );
+}
+
+function macroFields(r: Rates): Partial<Deal> {
+  const out: Partial<Deal> = {};
+  if (r.inflation != null) out.inflationPct = r.inflation;
+  if (r.fedFunds != null) out.riskFreePct = r.fedFunds;
+  return out;
 }

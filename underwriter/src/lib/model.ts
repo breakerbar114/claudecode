@@ -38,6 +38,8 @@ export interface Deal {
   appreciationPct: number;
   holdYears: number;
   sellingCostPct: number;
+  inflationPct: number; // CPI-U year over year
+  riskFreePct: number; // effective Fed funds rate — what idle cash earns in T-bills / money market
 }
 
 /** Financing knobs. Every structure reads the subset it needs. */
@@ -340,12 +342,38 @@ export interface Targets {
   useCoc: boolean;
   /** BRRRR only: most cash you're willing to leave in after the refi. */
   maxCashLeft: number;
+  /** Cash-on-cash must at least match inflation, so cash flow isn't shrinking in real terms. */
+  beatInflation: boolean;
+  /** All-cash buys: the yield the cash must earn to justify the property over the alternative. */
+  cashHurdle: "inflation" | "fed" | "fedPlus";
+  cashPremiumPct: number; // added to the Fed rate for "fedPlus"
+  /** Internal: price a hurdle on its own, without the inflation floor (used for the comparison ladder). */
+  noInflationFloor?: boolean;
 }
 
-export function meetsTargets(r: Result, tg: Targets, units: number): boolean {
-  if (r.cashFlow < tg.minCashFlow * units - 1e-6) return false;
+export const HURDLE_LABEL: Record<Targets["cashHurdle"], string> = {
+  inflation: "beats inflation",
+  fed: "beats the Fed rate",
+  fedPlus: "beats the Fed rate + premium",
+};
+
+/** The cash-on-cash floor a deal must clear under these targets. */
+export function requiredCoc(id: StructureId, d: Deal, tg: Targets): number {
+  let req = -Infinity;
+  if (tg.useCoc) req = Math.max(req, tg.minCoc);
+  if (tg.beatInflation && !tg.noInflationFloor) req = Math.max(req, d.inflationPct);
+  if (id === "cash") {
+    const h = tg.cashHurdle === "inflation" ? d.inflationPct : tg.cashHurdle === "fed" ? d.riskFreePct : d.riskFreePct + tg.cashPremiumPct;
+    // Never let an all-cash hurdle fall below zero real return.
+    req = Math.max(req, h, tg.noInflationFloor ? -Infinity : d.inflationPct);
+  }
+  return req;
+}
+
+export function meetsTargets(r: Result, tg: Targets, d: Deal): boolean {
+  if (r.cashFlow < tg.minCashFlow * d.units - 1e-6) return false;
   if (tg.useDscr && r.dscr < tg.minDscr) return false;
-  if (tg.useCoc && r.coc < tg.minCoc) return false;
+  if (r.coc < requiredCoc(r.structure, d, tg)) return false;
   if (r.structure === "brrrr" && (r.financing.cashLeftInDeal ?? 0) > tg.maxCashLeft) return false;
   return true;
 }
@@ -355,10 +383,8 @@ export function meetsTargets(r: Result, tg: Targets, units: number): boolean {
  * Bisection on price — cash flow, DSCR and CoC all fall monotonically as price rises.
  * Returns null if not even a $1k price works; `capped` if every price up to the ceiling works.
  */
-export function maxPrice(id: StructureId, d: Deal, t: Terms, tg0: Targets): { price: number | null; capped: boolean } {
-  // With no debt, cash flow stays positive at almost any price — the real constraint is yield.
-  const tg = id === "cash" ? { ...tg0, useCoc: true } : tg0;
-  const ok = (p: number) => meetsTargets(underwrite(id, d, t, p, true), tg, d.units);
+export function maxPrice(id: StructureId, d: Deal, t: Terms, tg: Targets): { price: number | null; capped: boolean } {
+  const ok = (p: number) => meetsTargets(underwrite(id, d, t, p, true), tg, d);
   const ceiling = Math.max(d.price, d.marketValue, d.arv) * 2.5;
   if (ok(ceiling)) return { price: ceiling, capped: true };
   let lo = 1000;
@@ -387,6 +413,8 @@ export function scorecard(r: Result, d: Deal): { checks: Check[]; grade: string;
     { label: "Positive cash flow after reserves", pass: r.cashFlow > 0, detail: `$${fmt(r.cashFlow)}/mo`, weight: 3 },
     { label: "Survives stress test", pass: r.stress.cashFlow >= 0, detail: `Rent −5%, vacancy +5 pts, expenses +10% → $${fmt(r.stress.cashFlow)}/mo`, weight: 3 },
     { label: "Break-even occupancy ≤ 85%", pass: r.breakEvenOcc <= 85, detail: `${r.breakEvenOcc.toFixed(1)}% occupied to cover all costs`, weight: 2 },
+    { label: "Beats inflation", pass: r.coc - d.inflationPct >= 0, detail: Number.isFinite(r.coc) ? `Real cash yield ${(r.coc - d.inflationPct).toFixed(1)}% (CoC ${r.coc.toFixed(1)}% − CPI ${d.inflationPct}%)` : "No cash left in", weight: 2 },
+    { label: "Beats the Fed rate", pass: r.coc >= d.riskFreePct, detail: Number.isFinite(r.coc) ? `${(r.coc - d.riskFreePct).toFixed(1)} pts vs ${d.riskFreePct}% risk-free` : "No cash left in", weight: 1 },
     { label: "Cash-on-cash ≥ 8%", pass: r.coc >= 8, detail: Number.isFinite(r.coc) ? `${r.coc.toFixed(1)}%` : "∞ (no cash left in)", weight: 2 },
     { label: "Positive leverage", pass: r.debtService === 0 || r.capRate > r.loanConstant, detail: `Cap ${r.capRate.toFixed(2)}% vs loan constant ${r.loanConstant.toFixed(2)}%`, weight: 2 },
     { label: "Realistic expense ratio (≥ 35%)", pass: r.expenseRatio >= 35, detail: `${r.expenseRatio.toFixed(1)}% of EGI — under 35% usually means a pro-forma fantasy`, weight: 2 },
@@ -411,4 +439,47 @@ const fx = (n: number) => (Number.isFinite(n) ? n.toFixed(2) : "∞");
 export function money(n: number): string {
   if (!Number.isFinite(n)) return n > 0 ? "∞" : "−∞";
   return (n < -0.5 ? "−$" : "$") + fmt(Math.abs(n));
+}
+
+export interface Opportunity {
+  cash: number;
+  years: number;
+  assetIncome: number; // year-1 cash flow
+  fedIncome: number; // year-1 interest at Fed rate
+  assetYield: number; // CoC %
+  realAssetYield: number;
+  realFedYield: number;
+  assetEndWealth: number; // all cash flows + sale proceeds (not reinvested)
+  fedEndWealth: number; // cash compounded at the Fed rate
+  inflationEndWealth: number; // what the cash must grow to just to keep purchasing power
+  assetReal: number; // end wealth in today's dollars
+  fedReal: number;
+  irr: number;
+  realIrr: number;
+}
+
+/** Same dollars, two homes: this property vs. parking the cash at the Fed rate. */
+export function vsRiskFree(r: Result, d: Deal): Opportunity | null {
+  const cash = r.cashInvested;
+  if (!(cash > 0)) return null;
+  const n = d.holdYears;
+  const inf = Math.pow(1 + d.inflationPct / 100, n);
+  const assetEndWealth = cash + r.totalProfit;
+  const fedEndWealth = cash * Math.pow(1 + d.riskFreePct / 100, n);
+  return {
+    cash,
+    years: n,
+    assetIncome: r.cashFlow * 12,
+    fedIncome: (cash * d.riskFreePct) / 100,
+    assetYield: r.coc,
+    realAssetYield: r.coc - d.inflationPct,
+    realFedYield: d.riskFreePct - d.inflationPct,
+    assetEndWealth,
+    fedEndWealth,
+    inflationEndWealth: cash * inf,
+    assetReal: assetEndWealth / inf,
+    fedReal: fedEndWealth / inf,
+    irr: r.irr,
+    realIrr: Number.isFinite(r.irr) ? ((1 + r.irr / 100) / (1 + d.inflationPct / 100) - 1) * 100 : NaN,
+  };
 }
