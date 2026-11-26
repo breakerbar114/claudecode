@@ -3,6 +3,6 @@ dist
 .env
 server/.cache.json
 *.tsbuildinfo
-*.png
+/*.png
 dist-artifact
 deal-underwriter.html
