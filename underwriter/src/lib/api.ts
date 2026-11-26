@@ -69,6 +69,10 @@ function headers(keys: Keys): Record<string, string> {
 
 export async function lookup(address: string, keys: Keys): Promise<Lookup> {
   const r = await fetch(`/api/lookup?address=${encodeURIComponent(address)}`, { headers: headers(keys) });
+  if (r.status === 401) {
+    location.href = "/login";
+    throw new Error("Signed out. Sign in again.");
+  }
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || `Lookup failed (${r.status})`);
   return j;
@@ -111,3 +115,19 @@ export const store = {
     } catch {}
   },
 };
+
+export interface ServerStatus {
+  rentcast: boolean;
+  census: boolean;
+  auth: boolean;
+}
+
+export async function getStatus(): Promise<ServerStatus | null> {
+  if (STATIC) return null;
+  try {
+    const r = await fetch("/api/status");
+    return r.ok ? r.json() : null;
+  } catch {
+    return null;
+  }
+}

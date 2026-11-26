@@ -13,6 +13,23 @@ npm run dev             # http://localhost:5173  (API on :8787)
 npm run build && npm start   # serves app + API on :8787
 ```
 
+## Put it on your phone (private)
+
+The hosted claude.ai page can't call outside data services, so live RentCast data needs this app's own server. Deploy it once, then install it on your phone:
+
+1. **Get a RentCast key** at https://app.rentcast.io/app/api (free tier: 50 calls/mo; each new address uses 3, and repeats are cached for 14 days). Optional: a free Census key at https://api.census.gov/data/key_signup.html.
+2. **Deploy on Render**: render.com → New → Blueprint → connect this GitHub repo and pick the branch. Render reads `render.yaml` at the repo root and asks for:
+   - `RENTCAST_API_KEY`: your key
+   - `APP_PASSWORD`: the password you'll type on your phone (use something long)
+   - `CENSUS_API_KEY`: optional
+   It builds, then gives you a URL like `https://deal-underwriter.onrender.com`. The blueprint uses the $7/mo Starter plan; change `plan: starter` to `plan: free` if you're fine with a 30–50 s wake-up after 15 idle minutes.
+3. **Install on your phone**: open the URL, sign in once.
+   - iPhone (Safari): Share → **Add to Home Screen**.
+   - Android (Chrome): ⋮ → **Install app**.
+   It opens full screen from its own icon and stays signed in for a year. "Sign out" is in the footer.
+
+Without `APP_PASSWORD` the server is open, which is fine on your own computer but not on the internet.
+
 ## Where the numbers come from
 
 | Data | Source | Key |

@@ -364,3 +364,18 @@ details.banner > summary { cursor: pointer; font-weight: 600; }
 .comps-tab { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 .comps-tab > .card { border: 0; padding: 0; background: none; }
 .comps-tab > .card > h3 { display: block; }
+
+/* ===== Installed-app (PWA) polish ===== */
+/* The claude.ai page pads for the notch itself; our own server's page has to. */
+.pwa body { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+button, a, .asm-row, input[type="range"] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+@media (pointer: coarse) {
+  /* iOS zooms into any input under 16px; keep the page still. */
+  input, select, textarea { font-size: 16px !important; }
+  .asm-row { padding-block: 10px; }
+}
+.pwa .footer-logout { display: inline; }
+.footer-logout { display: none; margin-left: 8px; }
+.ai-status { align-items: flex-start; }
+.ai-status .dot { margin-top: 6px; }
+.ai-status .asm-reset { align-self: center; }

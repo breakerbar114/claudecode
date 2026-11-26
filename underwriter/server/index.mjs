@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_TAX_RATE, STATE_INS_RATE, NON_HOMESTEAD_UPLIFT } from "./stateData.mjs";
+import { installAuth, authEnabled } from "./auth.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -186,6 +187,13 @@ const comp = (c) => ({
   correlation: c.correlation,
 });
 
+app.get("/healthz", (_req, res) => res.send("ok"));
+installAuth(app, express);
+
+// What the server is set up with, so the app can hide the key settings when they're not needed.
+app.get("/api/status", (_req, res) =>
+  res.json({ rentcast: !!process.env.RENTCAST_API_KEY, census: !!process.env.CENSUS_API_KEY, auth: authEnabled() }),
+);
 app.get("/api/rates", async (_req, res) => res.json(await rates()));
 
 app.get("/api/lookup", async (req, res) => {

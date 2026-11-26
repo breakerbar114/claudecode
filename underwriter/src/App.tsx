@@ -6,7 +6,7 @@ import { RentCompsPanel } from "./components/RentComps";
 import { Unit } from "./components/Slider";
 import { Deal, Result, StructureId, Targets, Terms, fmt, money, maxPrice, scorecard, underwrite } from "./lib/model";
 import { STRUCTURES, defaultTerms } from "./lib/structures";
-import { Keys, Lookup, Rates, STATIC, getRates, lookup, store } from "./lib/api";
+import { Keys, Lookup, Rates, STATIC, ServerStatus, getRates, getStatus, lookup, store } from "./lib/api";
 import { estimateExistingLoan } from "./lib/estimate";
 import { initialPayment } from "./lib/finance";
 import { Comp, Subject, runComps } from "./lib/comps";
@@ -86,6 +86,10 @@ export default function App() {
   const [error, setError] = useState("");
   const [keys, setKeys] = useState<Keys>(store.get("uw:keys", { rentcast: "", census: "" }));
   const [showKeys, setShowKeys] = useState(false);
+  const [status, setStatus] = useState<ServerStatus | null>(null);
+  useEffect(() => {
+    getStatus().then(setStatus);
+  }, []);
   const [library, setLibrary] = useState<Saved[]>(store.get("uw:library2", []));
   const [comps, setComps] = useState<Comp[]>(saved?.comps ?? []);
   const [saleComps, setSaleComps] = useState<Comp[]>(saved?.saleComps ?? []);
@@ -304,7 +308,7 @@ export default function App() {
               {library.map((s, i) => <option key={i} value={i}>{s.name}</option>)}
             </select>
           )}
-          {!STATIC && <button className="ghost" onClick={() => setShowKeys((v) => !v)}>Data keys</button>}
+          {!STATIC && !status?.rentcast && <button className="ghost" onClick={() => setShowKeys((v) => !v)}>Data keys</button>}
         </div>
       </header>
 
@@ -517,6 +521,7 @@ export default function App() {
         </section>
       </main>
       <footer className="muted small">
+        {status?.auth && <a className="footer-logout" href="/logout">Sign out</a>}{" "}
         Estimates only. Before you offer, verify rent with local property managers, taxes with the assessor, insurance with a quote, and any existing loan with the seller's mortgage statement.
       </footer>
     </div>

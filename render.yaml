@@ -1,0 +1,22 @@
+# One-click deploy of the Deal Underwriter to Render (render.com → New → Blueprint → pick this repo).
+# Fill in the three secrets when Render asks. SESSION_SECRET is generated for you.
+services:
+  - type: web
+    name: deal-underwriter
+    runtime: node
+    rootDir: underwriter
+    plan: starter # $7/mo, always on. "free" works too but sleeps after 15 min idle (~30-50 s to wake).
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: RENTCAST_API_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: CENSUS_API_KEY
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
