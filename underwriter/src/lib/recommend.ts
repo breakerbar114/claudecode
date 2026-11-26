@@ -3,7 +3,7 @@
 import stateData from "../../shared/stateData.json";
 import type { CompResult } from "./comps";
 
-export type RecKey = "rent" | "taxRatePct" | "mgmtPct" | "vacancyPct" | "repairsPct" | "capexPct" | "insuranceAnnual";
+export type RecKey = "marketValue" | "rent" | "taxRatePct" | "mgmtPct" | "vacancyPct" | "repairsPct" | "capexPct" | "insuranceAnnual";
 
 export interface Rec {
   value: number;
@@ -18,6 +18,9 @@ export interface RecInputs {
   yearBuilt?: number;
   marketValue: number;
   comps: CompResult | null;
+  saleComps?: CompResult | null;
+  valueAvm?: number | null;
+  valueAvmSource?: string;
   rentAvmPerUnit?: number | null;
   rentAvmSource?: string;
   /** Tax rate already worked out by the server from the actual bill / county / state. */
@@ -39,6 +42,17 @@ export function stateFromAddress(addr: string): string | null {
 export function recommend(i: RecInputs): Partial<Record<RecKey, Rec>> {
   const r: Partial<Record<RecKey, Rec>> = {};
   const units = Math.max(1, i.units);
+
+  // ---- Value: sale comps first, AVM second ----
+  if (i.saleComps?.recommended) {
+    r.marketValue = {
+      value: i.saleComps.recommended,
+      why: `Weighted median of ${i.saleComps.used} adjusted sale comp${i.saleComps.used === 1 ? "" : "s"}, ${i.saleComps.confidence.toLowerCase()} confidence`,
+      aggressive: "above",
+    };
+  } else if (i.valueAvm) {
+    r.marketValue = { value: i.valueAvm, why: `${i.valueAvmSource ?? "AVM"}; no usable sale comps`, aggressive: "above" };
+  }
 
   // ---- Rent: comps first, AVM second ----
   if (i.comps?.recommended) {
@@ -97,9 +111,9 @@ export function recommend(i: RecInputs): Partial<Record<RecKey, Rec>> {
   // ---- Insurance ----
   if (i.lookupInsurance) {
     r.insuranceAnnual = { value: i.lookupInsurance, why: "State average landlord premium for this value. Get a real quote.", aggressive: "below" };
-  } else if (i.state && INS[i.state] != null && i.marketValue > 0) {
+  } else if (i.state && INS[i.state] != null && (r.marketValue?.value ?? i.marketValue) > 0) {
     r.insuranceAnnual = {
-      value: Math.round((i.marketValue * INS[i.state]) / 100 / 50) * 50,
+      value: Math.round(((r.marketValue?.value ?? i.marketValue) * INS[i.state]) / 100 / 50) * 50,
       why: `${i.state} average landlord premium (${INS[i.state]}% of value). Get a real quote.`,
       aggressive: "below",
     };

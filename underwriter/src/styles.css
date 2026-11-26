@@ -342,3 +342,25 @@ details.banner > summary { cursor: pointer; font-weight: 600; }
 .chip-default { background: var(--surface-2); color: var(--muted); font-weight: 500; }
 .kpis { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
 .ai-text { flex: 1 1 200px; min-width: 0; }
+
+/* Evidence ("why this number") */
+.evidence { display: grid; gap: 8px; font-size: 12.5px; padding: 10px 12px; background: var(--surface-2); border-radius: 10px; }
+.asm.edited .evidence { background: var(--surface); }
+.ev-lead { margin: 0; line-height: 1.45; }
+.ev-note { margin: 0; color: var(--muted); line-height: 1.4; }
+.ev-h { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.ev-calc { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.ev-calc td { padding: 3px 0; border-bottom: 1px dashed var(--border); vertical-align: top; }
+.ev-calc td:last-child { text-align: right; white-space: nowrap; padding-left: 10px; font-weight: 600; }
+.ev-calc tr.strong td { font-weight: 750; color: var(--rec); border-bottom: 0; }
+.ev-comps table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.ev-comps th { font-size: 10.5px; color: var(--muted); font-weight: 600; text-align: right; padding: 2px 0 4px 6px; }
+.ev-comps th:first-child { text-align: left; padding-left: 0; }
+.ev-comps td { padding: 4px 0 4px 6px; border-top: 1px solid var(--border); text-align: right; vertical-align: top; white-space: nowrap; }
+.ev-comps td:first-child { text-align: left; white-space: normal; padding-left: 0; }
+.ev-comps td .muted { font-size: 11px; }
+.ev-comps .link { padding: 6px 0 0; }
+.ev-sources ul { margin: 0; padding-left: 16px; display: grid; gap: 2px; }
+.comps-tab { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.comps-tab > .card { border: 0; padding: 0; background: none; }
+.comps-tab > .card > h3 { display: block; }

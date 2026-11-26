@@ -9,7 +9,8 @@ import { STRUCTURES, defaultTerms } from "./lib/structures";
 import { Keys, Lookup, Rates, STATIC, getRates, lookup, store } from "./lib/api";
 import { estimateExistingLoan } from "./lib/estimate";
 import { initialPayment } from "./lib/finance";
-import { RentComp, Subject, runComps } from "./lib/comps";
+import { Comp, Subject, runComps } from "./lib/comps";
+import { EvCtx, dealEvidence, termEvidence } from "./components/Evidence";
 import { Rec, RecKey, recommend, stateFromAddress } from "./lib/recommend";
 
 // The deal the AI starts from before any lookup: a typical suburban single-family rental.
@@ -40,15 +41,16 @@ interface Saved {
   loanEst: LoanEst;
   structure: StructureId;
   lookup: Lookup | null;
-  comps: RentComp[];
+  comps: Comp[];
+  saleComps?: Comp[];
   subject: SubjectFacts;
   address: string;
 }
 
-function compsFromLookup(l: Lookup): RentComp[] {
-  return (l.rent?.comps ?? [])
+function compsFromLookup(l: Lookup, kind: "rent" | "sale" = "rent"): Comp[] {
+  return ((kind === "rent" ? l.rent?.comps : l.value?.comps) ?? [])
     .filter((c) => c.price > 0)
-    .map((c, i) => ({ id: `rc${i}`, address: c.address, rent: c.price, beds: c.beds, baths: c.baths, sqft: c.sqft, distance: c.distance, date: c.date, correlation: c.correlation, include: true, source: "rentcast" as const }));
+    .map((c, i) => ({ id: `${kind[0]}c${i}`, address: c.address, amount: c.price, yearBuilt: c.yearBuilt, status: c.status, beds: c.beds, baths: c.baths, sqft: c.sqft, distance: c.distance, date: c.date, correlation: c.correlation, include: true, source: "rentcast" as const }));
 }
 
 const recPatch = (r: Partial<Record<RecKey, Rec>>): Partial<Deal> => {
@@ -85,15 +87,16 @@ export default function App() {
   const [keys, setKeys] = useState<Keys>(store.get("uw:keys", { rentcast: "", census: "" }));
   const [showKeys, setShowKeys] = useState(false);
   const [library, setLibrary] = useState<Saved[]>(store.get("uw:library2", []));
-  const [comps, setComps] = useState<RentComp[]>(saved?.comps ?? []);
+  const [comps, setComps] = useState<Comp[]>(saved?.comps ?? []);
+  const [saleComps, setSaleComps] = useState<Comp[]>(saved?.saleComps ?? []);
   const [subject, setSubject] = useState<SubjectFacts>(saved?.subject ?? SAMPLE_SUBJECT);
   const [tab, setTab] = useState<Tab>("checks");
   const [openRow, setOpenRow] = useState<string | null>(null);
   const toggleRow = (id: string) => setOpenRow((o) => (o === id ? null : id));
 
   useEffect(
-    () => store.set("uw:v2", { name: "current", aiDeal, dealOv, termsOv, loanEst, structure, lookup: data, comps, subject, address }),
-    [aiDeal, dealOv, termsOv, loanEst, structure, data, comps, subject, address],
+    () => store.set("uw:v2", { name: "current", aiDeal, dealOv, termsOv, loanEst, structure, lookup: data, comps, saleComps, subject, address }),
+    [aiDeal, dealOv, termsOv, loanEst, structure, data, comps, saleComps, subject, address],
   );
   useEffect(() => store.set("uw:targets", targets), [targets]);
   useEffect(() => store.set("uw:keys", keys), [keys]);
@@ -109,7 +112,8 @@ export default function App() {
 
   // ---------- AI layer ----------
   const preRec = { ...aiDeal, ...dealOv };
-  const compResult = useMemo(() => runComps(comps, subject), [comps, subject]);
+  const compResult = useMemo(() => runComps(comps, subject, Date.now(), "rent"), [comps, subject]);
+  const saleResult = useMemo(() => runComps(saleComps, subject, Date.now(), "sale"), [saleComps, subject]);
   const propState = data?.geo?.state ?? stateFromAddress(address);
   const recs = useMemo(
     () =>
@@ -119,14 +123,18 @@ export default function App() {
         yearBuilt: subject.yearBuilt,
         marketValue: data?.value?.estimate ?? preRec.marketValue,
         comps: compResult,
+        saleComps: saleResult,
+        valueAvm: data?.value?.estimate,
+        valueAvmSource: data?.value?.source,
         rentAvmPerUnit: data?.rent?.perUnit,
         rentAvmSource: data?.rent?.source,
         lookupTaxRate: data?.taxes.ratePct,
         lookupTaxSource: data?.taxes.source,
-        lookupInsurance: data?.insurance.annual,
+        // Price insurance off the comp-based value when there is one, so value and insurance agree.
+        lookupInsurance: saleResult.used ? null : data?.insurance.annual,
         currentRent: aiDeal.rent,
       }),
-    [preRec.units, propState, subject.yearBuilt, data, preRec.marketValue, compResult, aiDeal.rent],
+    [preRec.units, propState, subject.yearBuilt, data, preRec.marketValue, compResult, saleResult, aiDeal.rent],
   );
   const aiFull: Deal = useMemo(() => ({ ...aiDeal, ...recPatch(recs) }), [aiDeal, recs]);
   const deal: Deal = useMemo(() => ({ ...aiFull, ...dealOv }), [aiFull, dealOv]);
@@ -207,7 +215,8 @@ export default function App() {
       setTermsOv({});
       const est = estimateExistingLoan(l.property.lastSalePrice, l.property.lastSaleDate, l.rates.thirtyYear);
       setLoanEst(est && est.balance > 0 ? { balance: est.balance, ratePct: est.ratePct, yearsLeft: est.yearsLeft } : null);
-      setComps(compsFromLookup(l));
+      setComps(compsFromLookup(l, "rent"));
+      setSaleComps(compsFromLookup(l, "sale"));
       setSubject({ beds: l.property.beds, baths: l.property.baths, sqft: l.property.sqft, yearBuilt: l.property.yearBuilt });
     } catch (err) {
       setError(String((err as Error).message || err));
@@ -233,7 +242,7 @@ export default function App() {
 
   const saveDeal = () => {
     const name = data?.address || address.trim() || `Deal ${library.length + 1}`;
-    setLibrary((lib) => [{ name, aiDeal, dealOv, termsOv, loanEst, structure, lookup: data, comps, subject, address }, ...lib.filter((x) => x.name !== name)].slice(0, 30));
+    setLibrary((lib) => [{ name, aiDeal, dealOv, termsOv, loanEst, structure, lookup: data, comps, saleComps, subject, address }, ...lib.filter((x) => x.name !== name)].slice(0, 30));
   };
   const loadDeal = (s: Saved) => {
     setAiDeal(s.aiDeal);
@@ -243,8 +252,14 @@ export default function App() {
     setStructure(STRUCTURES.some((x) => x.id === s.structure) ? s.structure : "conventional");
     setData(s.lookup);
     setComps(s.comps);
+    setSaleComps(s.saleComps ?? []);
     setSubject(s.subject);
     setAddress(s.address);
+  };
+
+  const evCtx: EvCtx = {
+    deal, ai: aiFull, data, recs, rentComps: compResult, saleComps: saleResult, yearBuilt: subject.yearBuilt,
+    state: propState, macro, address: data?.address || address.trim(), openComps: () => setTab("comps"),
   };
 
   // Shared props for number rows on the deal.
@@ -261,6 +276,7 @@ export default function App() {
       step={step}
       source={source}
       why={why}
+      evidence={openRow === k ? dealEvidence(k, evCtx) : undefined}
       open={openRow === k}
       onToggle={toggleRow}
       onChange={setD(k)}
@@ -374,7 +390,7 @@ export default function App() {
               marker: current.price && !current.capped ? { value: current.price, label: "Max offer" } : undefined,
               extra: current.price !== null && !current.capped ? <button className="link" onClick={() => setD("price")(current.price!)}>Set to max offer ({money(current.price)})</button> : undefined,
             })}
-            {dRow("marketValue", "As-is value", "$", Math.round(ref * 0.5), Math.round(ref * 1.5), 1000, data?.value ? "AVM" : "Estimate", data?.value?.source)}
+            {dRow("marketValue", "As-is value", "$", Math.round(ref * 0.5), Math.round(ref * 1.5), 1000, saleResult.used ? `${saleResult.used} sale comps` : data?.value ? "AVM" : "Estimate", recs.marketValue?.why)}
             {dRow("rehab", "Rehab budget", "$", 0, Math.max(150000, ref * 0.4), 1000, "None assumed")}
             {(deal.rehab > 0 || structure === "brrrr") && dRow("arv", "After-repair value", "$", Math.round(ref * 0.6), Math.round(ref * 1.8), 1000, "= value")}
           </AsmGroup>
@@ -415,6 +431,7 @@ export default function App() {
                   step={f.step}
                   source={typeof f.source === "function" ? f.source(deal) : f.source}
                   why={typeof f.why === "function" ? f.why(deal, loanEst) : f.why}
+                  evidence={openRow === `t-${f.key}` ? termEvidence(f.key, structure, terms, deal, data, macro) : undefined}
                   open={openRow === `t-${f.key}`}
                   onToggle={toggleRow}
                   onChange={setT(f.key)}
@@ -465,7 +482,7 @@ export default function App() {
             <div className="tabs" role="tablist">
               {([
                 ["checks", `Checks ${score.checks.filter((c) => c.pass).length}/${score.checks.length}`],
-                ["comps", `Rent comps${compResult.used ? ` (${compResult.used})` : ""}`],
+                ["comps", `Comps${compResult.used + saleResult.used ? ` (${compResult.used + saleResult.used})` : ""}`],
                 ["proforma", "Pro forma"],
                 ["loans", "Loans"],
                 ["projection", `${deal.holdYears}-yr return`],
@@ -479,7 +496,10 @@ export default function App() {
             <div className="tab-body">
               {tab === "checks" && <Checks score={score} result={result} />}
               {tab === "comps" && (
-                <RentCompsPanel result={compResult} subject={subject} setSubject={setSubject} comps={comps} setComps={setComps} units={deal.units} currentRent={deal.rent} onUse={(v) => setD("rent")(v)} hosted={STATIC} />
+                <div className="comps-tab">
+                  <RentCompsPanel kind="rent" result={compResult} subject={subject} setSubject={setSubject} comps={comps} setComps={setComps} units={deal.units} currentRent={deal.rent} onUse={(v) => setD("rent")(v)} hosted={STATIC} />
+                  <RentCompsPanel kind="sale" hideSubject result={saleResult} subject={subject} setSubject={setSubject} comps={saleComps} setComps={setSaleComps} units={deal.units} currentRent={deal.marketValue} onUse={(v) => setD("marketValue")(v)} hosted={STATIC} />
+                </div>
               )}
               {tab === "proforma" && <ProForma result={result} deal={deal} />}
               {tab === "loans" && <Loans result={result} />}

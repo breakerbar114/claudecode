@@ -23,6 +23,8 @@ interface NumProps extends Base {
   onReset?: () => void;
   marker?: { value: number; label: string };
   extra?: React.ReactNode;
+  /** The justification: math, comps and sources behind the AI's value. */
+  evidence?: React.ReactNode;
 }
 
 // Sources that are plain defaults rather than data get a quiet gray chip.
@@ -56,7 +58,7 @@ export function Assumption(p: NumProps) {
       )}
       {p.open && (
         <div className="asm-body">
-          {p.why && <p className="asm-why">{p.why}</p>}
+          {p.evidence ? <div className="evidence">{p.evidence}</div> : p.why && <p className="asm-why">{p.why}</p>}
           <Slider bare label={p.label} value={p.value} onChange={p.onChange} min={p.min} max={p.max} step={p.step} unit={p.unit} marker={p.marker} rec={aiRec} />
           {p.extra}
         </div>
